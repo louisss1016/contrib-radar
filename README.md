@@ -36,8 +36,6 @@ git clone https://github.com/louisss1016/contrib-radar.git
 | WorkBuddy 等本地 Agent | `~/.agents/skills/contrib-radar/`（用户级，通用） |
 | 其他 Agent Skills 平台 | 按平台约定放入 skills 目录即可 |
 
-> Windows 用户豆包路径为 `%LOCALAPPDATA%\Doubao\User Data\Default\.doubao\agent_mode\workspace\.skills\contrib-radar\`。
-> 也支持直接复制到项目目录下随仓库走：`<your-repo>/.agents/skills/contrib-radar/`。
 
 **第 3 步 · 使用**：在对话里直接说：
 
