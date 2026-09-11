@@ -14,6 +14,7 @@ agent_created: true
 核心原则：**先沟通再动手、小步快跑、一切结论定位到具体文件与函数，禁止泛泛而谈、禁止编造数据。**
 
 v3 更新：脚本层基于共享封装 `scripts/github_api.py`（统一限速/降级）；`find_issues.py` 新增启发式打分与撞车检测（剔除已被 open PR 引用的 Issue）；`repo_health.py` 新增 AI 生成代码政策检查；`discover_repos.py` 新增新手甜蜜区模式（--beginner）与 --json 导出。
+v3.1 更新：新增 Route C 持续监控（每日定时任务）——每天扫描新出现的可认领 Issue，输出差异日报。
 
 ## 触发条件
 
@@ -21,6 +22,7 @@ v3 更新：脚本层基于共享封装 `scripts/github_api.py`（统一限速/�
 - 用户给了具体仓库地址，想知道能提什么 PR / Issue（"分析这个项目有什么贡献机会"）
 - 用户想挖 good first issue、评估某项目是否值得投入
 - 用户想把开源贡献作为面试素材来规划
+- 用户要求"每天/定期盯一下有哪些可认领的 Issue"（Route C，可由定时任务触发）
 
 ## 输入
 
@@ -36,6 +38,7 @@ v3 更新：脚本层基于共享封装 `scripts/github_api.py`（统一限速/�
 ```
 用户提供仓库 URL？
 ├── 是 → Route B：直接分析该项目的 PR/Issue 切入点
+├── 否 + 用户要求每日/定期监控 → Route C：持续监控（每日定时任务）
 └── 否 → Route A：发现候选项目 → 用户选定一个 → 进入 Route B
 ```
 
@@ -90,6 +93,24 @@ v3 更新：脚本层基于共享封装 `scripts/github_api.py`（统一限速/�
 ## 报告落盘约定
 
 Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YYYY-MM-DD>.md`（当前工作目录），并向用户展示。后续方案设计阶段直接读取该文件注入上下文，不依赖对话复制粘贴。Route A 的候选清单可追加写入同一文件头部，形成完整决策链。
+
+## Route C：持续监控（每日定时任务）
+
+当用户要求"每天/定期盯一下有哪些可认领的 Issue"、或任务由定时任务（如豆包 cron）触发时启用：
+
+1. **每日例行**（触发后依次执行）：
+   - 跨仓库扫描：按 `references/project-discovery.md` 的搜索语法或脚本，扫描
+     `label:"good first issue"` / `label:"help wanted"` + `no:assignee` + 用户技术栈语言
+     （Python / TypeScript）+ 近 24~48 小时有更新，捕获新增的可认领 Issue；
+   - 可选：`discover_repos.py` 发现新候选项目，对高价值新仓库跑 `repo_health.py` 体检（含 AI 政策）；
+   - 撞车复核：`find_issues.py` 已内置 open PR 引用剔除，跨仓库扫描时对 top 候选手动复核认领评论。
+2. **与上次结果对比**：读取上次日报 `daily-issue-scan-<YYYY-MM-DD>.md`，只输出差异（新增 / 状态变化 / 已认领）。
+3. **输出日报**：写入 `daily-issue-scan-<YYYY-MM-DD>.md`，包含：
+   - 今日新增可认领 Issue（表格：# / 仓库 / 标题 / 打分 / 链接）
+   - 状态变化（新增 N 条 / 被认领 M 条 / 已关闭 K 条）
+   - 推荐动作（1~2 条：最值得现在动手的 Issue + 理由）
+4. **限速注意**：未认证 Search API 10/min——跨仓库扫描控制搜索次数（每语言 1 次 + 撞车 1 次）；
+   设置 `GITHUB_TOKEN`（search 30/min）可放开。脚本见 `scripts/`。
 
 ## 后续阶段（可选，用户确认后执行）
 
