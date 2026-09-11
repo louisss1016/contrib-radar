@@ -29,9 +29,14 @@ git clone https://github.com/louisss1016/contrib-radar.git
 | 平台 | 目录 |
 |------|------|
 | Claude Code | `~/.claude/skills/contrib-radar/` |
-| Codex | `~/.codex/skills/contrib-radar/` |
+| Codex（OpenAI） | `~/.codex/skills/contrib-radar/` |
+| Cursor | `.cursor/skills/contrib-radar/`（项目级） |
+| GitHub Copilot | `.github/skills/contrib-radar/`（项目级） |
+| 豆包 Doubao | `~/.doubao/agent_mode/workspace/.skills/contrib-radar/` |
+| WorkBuddy 等本地 Agent | `~/.agents/skills/contrib-radar/`（用户级，通用） |
 | 其他 Agent Skills 平台 | 按平台约定放入 skills 目录即可 |
 
+> Windows 用户豆包路径为 `%LOCALAPPDATA%\Doubao\User Data\Default\.doubao\agent_mode\workspace\.skills\contrib-radar\`。
 > 也支持直接复制到项目目录下随仓库走：`<your-repo>/.agents/skills/contrib-radar/`。
 
 **第 3 步 · 使用**：在对话里直接说：
