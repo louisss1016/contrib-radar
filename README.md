@@ -8,8 +8,9 @@
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![Dependencies: zero](https://img.shields.io/badge/Dependencies-zero-lightgrey.svg)](./contrib-radar/scripts)
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-compatible-purple.svg)](https://agentskills.io)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-**[快速上手](#-快速上手) · [真实效果](#-真实效果) · [特性](#-特性) · [命令参考](#-命令参考) · [工作流程](#-工作流程) · [设计原则](#-设计原则) · [路线图](#-路线图) · [FAQ](#-faq)**
+**[快速上手](#-快速上手) · [真实效果](#-真实效果) · [它是做什么的](#-它是做什么的) · [特性](#-特性) · [命令参考](#-命令参考) · [工作流程](#-工作流程) · [设计原则](#-设计原则) · [路线图](#-路线图) · [FAQ](#-faq)**
 
 </div>
 
@@ -23,7 +24,15 @@
 git clone https://github.com/louisss1016/contrib-radar.git
 ```
 
-**第 2 步 · 安装**：把 `contrib-radar/` 文件夹放入你所用平台的 Agent Skills 目录（支持 [Agent Skills](https://agentskills.io) 标准的 Claude Code / Codex / 豆包等均可）。
+**第 2 步 · 安装**：把 `contrib-radar/` 文件夹放入你所用平台的 Agent Skills 目录，例如：
+
+| 平台 | 目录 |
+|------|------|
+| Claude Code | `~/.claude/skills/contrib-radar/` |
+| Codex | `~/.codex/skills/contrib-radar/` |
+| 其他 Agent Skills 平台 | 按平台约定放入 skills 目录即可 |
+
+> 也支持直接复制到项目目录下随仓库走：`<your-repo>/.agents/skills/contrib-radar/`。
 
 **第 3 步 · 使用**：在对话里直接说：
 
@@ -39,7 +48,9 @@ python repo_health.py <owner/repo>                                           # �
 python find_issues.py <owner/repo> --min-score 40                            # ③ 筛选可认领 Issue
 ```
 
-> 💡 建议设置环境变量 `GITHUB_TOKEN`：Search 限额从 10/min 提升至 30/min、core 从 60/hr 提升至 5000/hr，并取消节流等待。
+每个脚本都支持 `--help` 查看全部参数。
+
+> 💡 **建议设置环境变量 `GITHUB_TOKEN`**：Search 限额从 10/min 提升至 30/min、core 从 60/hr 提升至 5000/hr，并取消节流等待。
 
 ---
 
@@ -117,7 +128,13 @@ $ python find_issues.py langchain-ai/langchain --include-bugs --limit 3 --min-sc
 | **不知道从哪个 Issue 入手** | 海量 Issue 里找不到"低门槛 + 有人理"的 | `find_issues.py` 启发式打分（0~100），按可上手度排序 |
 | **怕白干** | 提交前才发现已有人认领，或项目禁止 AI 代码 | 撞车检测剔除被 open PR 引用的 Issue + AI 政策扫描（`blocked / mention / ok / unknown`） |
 
-它适合：想开始做开源贡献的开发者、把开源贡献当面试素材的求职者、以及任何想系统化"找项目 → 找切入点"流程的人。
+**它适合**：想开始做开源贡献的开发者、把开源贡献当面试素材的求职者、以及任何想系统化"找项目 → 找切入点"流程的人。
+
+**它不适合**（边界声明）：
+
+- 想要"一键自动提 PR 并躺平"的场景——本工具默认**人工确认提交**，提交前由你拍板
+- 只想在某一个固定仓库长期深耕——直接用 `find_issues.py` 就够了，不必走完整 Route A
+- 需要商业级私有数据或 SLA 保障的团队场景——本项目是零依赖的个人开源工具
 
 ---
 
@@ -136,6 +153,7 @@ $ python find_issues.py langchain-ai/langchain --include-bugs --limit 3 --min-sc
 | 零依赖 | 纯 Python 标准库，无需 `pip install` |
 | TS 生态优先 | 内置前沿 Agent 项目 topic（Vercel AI SDK / Mastra / LangGraph.js / Eliza 等） |
 | 每日监控（Route C） | 配合定时任务每天扫描新出现的可认领 Issue，输出差异日报 |
+| 自动实现 + 人工确认（Route C+） | 高分 Issue 自动写好实现与 PR 材料，**你确认后才提交** |
 
 ---
 
@@ -147,6 +165,8 @@ $ python find_issues.py langchain-ai/langchain --include-bugs --limit 3 --min-sc
 | `repo_health.py` | 12 项健康度体检 + AI 政策扫描 | 多仓库批量、`--json`（单项缺失自动降级，不中断） |
 | `find_issues.py` | Issue 筛选、打分、撞车检测 | `--include-bugs` `--beginner-only` `--labels` `--min-score` `--days` `--json` |
 
+> 全部脚本支持 `--help`；输出格式（人读表格 / `--json`）可随场景切换。
+
 ---
 
 ## 🧭 工作流程（Agent 视角）
@@ -154,13 +174,14 @@ $ python find_issues.py langchain-ai/langchain --include-bugs --limit 3 --min-sc
 ```
 用户提供仓库 URL？
 ├── 是 → Route B：直接分析该项目的 PR/Issue 切入点
-├── 否 + 用户要求每日/定期监控 → Route C：持续监控（每日定时任务）
+├── 否 + 用户要求每日/定期监控 → Route C/C+：持续监控（每日定时任务）
 └── 否 → Route A：发现候选项目 → 用户选定一个 → 进入 Route B
 ```
 
 - **Route A · 从零开始**：收集画像（技术栈先确认 **Python / TypeScript**）→ 发现候选 → 批量健康体检 → 输出候选表 → 用户选定
 - **Route B · 已有目标仓库**：项目理解（README/CONTRIBUTING/主入口）→ 机筛 Issue + 人工复核 → AI 政策前置检查 → 7 维架构缺陷分析（定位到具体文件/函数）→ Top 3 贡献建议
 - **Route C · 持续监控**：配合定时任务每日执行——跨仓库扫描新出现的 good first issue / help wanted（Python / TypeScript，近 24~48h 更新）→ 撞车复核 → 与上次日报对比 → 输出差异日报 `daily-issue-scan-<date>.md`
+- **Route C+ · 自动实现 + 人工确认**：发现高分可认领 Issue → 自动写好实现代码 + 测试 + 完整 PR 描述 → 整理成待提交材料给你确认 → **确认后**才走 fork / commit / push / create PR 完整提交流程
 
 选定切入点后，可继续走 `references/contribution-workflow.md` 全流程：方案设计 → 代码实现 → PR 提交 → 面试叙事（STAR + 60 秒话术）。
 
@@ -170,7 +191,7 @@ $ python find_issues.py langchain-ai/langchain --include-bugs --limit 3 --min-sc
 
 ```
 contrib-radar/
-├── SKILL.md                       # Skill 主文件：定位、触发词、Route A/B/C 全流程
+├── SKILL.md                       # Skill 主文件：定位、触发词、Route A/B/C/C+ 全流程
 ├── references/                    # 方法论参考（5 个）
 │   ├── project-discovery.md       #   项目发现：搜索式 + 聚合站点 + 避坑
 │   ├── opportunity-analysis.md    #   切入点分析：架构缺陷、依赖、路线图、文档
@@ -201,7 +222,8 @@ contrib-radar/
 ## 🗺️ 路线图
 
 **v3（当前）已交付**：共享 API 封装、撞车检测、启发式打分、AI 政策扫描、`--beginner` 甜蜜区、`--json` 导出、TS 生态支持。
-**v3.1 已交付**：Route C 每日监控——配合定时任务每天扫描新出现的可认领 Issue，输出差异日报。
+
+**v3.1 已交付**：Route C 每日监控（定时任务每天扫描新 Issue 输出差异日报）+ Route C+ 自动实现与人工确认提交（高分 Issue 自动准备完整提交材料，由用户确认后提交）。
 
 **候选方向**（欢迎 Issue 讨论，暂未排期）：
 
@@ -222,8 +244,14 @@ contrib-radar/
 **会撞车吗？**
 脚本会剔除所有被 open PR 引用（`fixes #N` 等）的 Issue，并提示人工复核评论中的认领短语；动手前仍建议在 Issue 下留言认领。
 
+**自动提交安全吗？**
+默认**不自动提交**。Route C+ 只负责"写好实现 + 准备 PR 材料"，任何 fork / push / create PR 都要你确认后才执行；认证不可用时会直接生成待提交材料供你手动提交。
+
 **支持 GitLab / Gitee 吗？**
 流程方法论通用，但自带脚本仅支持 GitHub；其他平台需用 WebFetch 人工核查活跃度。
+
+**能配合定时任务每天跑吗？**
+能。在支持 cron 的 Agent 平台（如豆包）创建一个每天执行的定时任务，触发后走 Route C 扫描并输出日报；高分 Issue 自动进入 Route C+ 准备待提交材料。
 
 ---
 
