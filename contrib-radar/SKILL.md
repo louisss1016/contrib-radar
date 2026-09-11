@@ -14,7 +14,7 @@ agent_created: true
 核心原则：**先沟通再动手、小步快跑、一切结论定位到具体文件与函数，禁止泛泛而谈、禁止编造数据。**
 
 v3 更新：脚本层基于共享封装 `scripts/github_api.py`（统一限速/降级）；`find_issues.py` 新增启发式打分与撞车检测（剔除已被 open PR 引用的 Issue）；`repo_health.py` 新增 AI 生成代码政策检查；`discover_repos.py` 新增新手甜蜜区模式（--beginner）与 --json 导出。
-v3.1 更新：新增 Route C 持续监控（每日定时任务）——每天扫描新出现的可认领 Issue，输出差异日报。
+v3.1 更新：新增 Route C 持续监控（每日定时任务）与 Route C+（自动实现 + 人工确认提交）——每天扫描新出现的可认领 Issue，发现高分条目自动准备好完整提交材料，由用户确认后提交。
 
 ## 触发条件
 
@@ -38,7 +38,7 @@ v3.1 更新：新增 Route C 持续监控（每日定时任务）——每天扫
 ```
 用户提供仓库 URL？
 ├── 是 → Route B：直接分析该项目的 PR/Issue 切入点
-├── 否 + 用户要求每日/定期监控 → Route C：持续监控（每日定时任务）
+├── 否 + 用户要求每日/定期监控 → Route C：持续监控（每日定时任务，含 C+ 自动实现+人工确认）
 └── 否 → Route A：发现候选项目 → 用户选定一个 → 进入 Route B
 ```
 
@@ -111,6 +111,24 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
    - 推荐动作（1~2 条：最值得现在动手的 Issue + 理由）
 4. **限速注意**：未认证 Search API 10/min——跨仓库扫描控制搜索次数（每语言 1 次 + 撞车 1 次）；
    设置 `GITHUB_TOKEN`（search 30/min）可放开。脚本见 `scripts/`。
+
+### Route C+：自动实现 + 人工确认提交（默认模式）
+
+当定时任务或用户要求"发现值得做的 Issue 就准备好提交"时启用。**默认不自动提交**：
+
+1. **打分筛选**：对候选按可上手度打分（描述清晰度 / 标签 / 评论甜蜜区 / 新鲜度），
+   满足以下条件才进入自动实现：预估改动 1~3 个文件、工作量可控、仓库 AI 政策非 blocked。
+2. **自动实现**：按 `references/contribution-workflow.md` 的完整流程执行——
+   项目理解 → 最小侵入实现（逐步可运行）→ 补必要测试 → 改动控制在 300 行内。
+3. **准备提交材料**：参考 `references/communication-templates.md` 的优秀 PR 写法，
+   撰写完整 PR 描述（Problem/Solution/Changes/Testing/Notes for Reviewer，标注 Fixes #N），
+   把实现代码、测试、改动清单与 PR 描述整理成"待提交材料"展示给用户。
+4. **人工确认提交**：**用户确认前不得执行任何 GitHub 写操作**（fork / push / create PR）。
+   用户确认后，按完整流程提交：fork 目标仓库 → 创建分支 → Conventional Commits 拆分
+   2~4 个 commit → push → 创建 Pull Request。修改的源码必须走完整提交流程。
+5. **认证要求**：提交步骤依赖 GitHub 认证（OAuth 连接或 GITHUB_TOKEN）；认证不可用时
+   生成待提交材料不受影响，提交步骤提示用户完成认证后手动执行。
+6. **红线**：仓库 AI 政策明确禁止 AI 生成代码（blocked）时不得生成提交材料；提交前再次复核无撞车。
 
 ## 后续阶段（可选，用户确认后执行）
 
