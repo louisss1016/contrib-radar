@@ -135,6 +135,7 @@ $ python find_issues.py langchain-ai/langchain --include-bugs --limit 3 --min-sc
 | `--json` 输出 | 三个脚本均支持，方便接入其他工具链 |
 | 零依赖 | 纯 Python 标准库，无需 `pip install` |
 | TS 生态优先 | 内置前沿 Agent 项目 topic（Vercel AI SDK / Mastra / LangGraph.js / Eliza 等） |
+| 每日监控（Route C） | 配合定时任务每天扫描新出现的可认领 Issue，输出差异日报 |
 
 ---
 
@@ -153,11 +154,13 @@ $ python find_issues.py langchain-ai/langchain --include-bugs --limit 3 --min-sc
 ```
 用户提供仓库 URL？
 ├── 是 → Route B：直接分析该项目的 PR/Issue 切入点
+├── 否 + 用户要求每日/定期监控 → Route C：持续监控（每日定时任务）
 └── 否 → Route A：发现候选项目 → 用户选定一个 → 进入 Route B
 ```
 
 - **Route A · 从零开始**：收集画像（技术栈先确认 **Python / TypeScript**）→ 发现候选 → 批量健康体检 → 输出候选表 → 用户选定
 - **Route B · 已有目标仓库**：项目理解（README/CONTRIBUTING/主入口）→ 机筛 Issue + 人工复核 → AI 政策前置检查 → 7 维架构缺陷分析（定位到具体文件/函数）→ Top 3 贡献建议
+- **Route C · 持续监控**：配合定时任务每日执行——跨仓库扫描新出现的 good first issue / help wanted（Python / TypeScript，近 24~48h 更新）→ 撞车复核 → 与上次日报对比 → 输出差异日报 `daily-issue-scan-<date>.md`
 
 选定切入点后，可继续走 `references/contribution-workflow.md` 全流程：方案设计 → 代码实现 → PR 提交 → 面试叙事（STAR + 60 秒话术）。
 
@@ -167,7 +170,7 @@ $ python find_issues.py langchain-ai/langchain --include-bugs --limit 3 --min-sc
 
 ```
 contrib-radar/
-├── SKILL.md                       # Skill 主文件：定位、触发词、Route A/B 全流程
+├── SKILL.md                       # Skill 主文件：定位、触发词、Route A/B/C 全流程
 ├── references/                    # 方法论参考（5 个）
 │   ├── project-discovery.md       #   项目发现：搜索式 + 聚合站点 + 避坑
 │   ├── opportunity-analysis.md    #   切入点分析：架构缺陷、依赖、路线图、文档
@@ -198,10 +201,10 @@ contrib-radar/
 ## 🗺️ 路线图
 
 **v3（当前）已交付**：共享 API 封装、撞车检测、启发式打分、AI 政策扫描、`--beginner` 甜蜜区、`--json` 导出、TS 生态支持。
+**v3.1 已交付**：Route C 每日监控——配合定时任务每天扫描新出现的可认领 Issue，输出差异日报。
 
 **候选方向**（欢迎 Issue 讨论，暂未排期）：
 
-- 订阅与守护：定期 watch 目标仓库的新 good first issue 并推送
 - MCP server 化：把三个脚本封装为 MCP 工具，供更多 Agent 平台直接调用
 - 个性化推荐：结合用户技术栈历史做加权排序
 - 周报导出：将一周的贡献跟踪结果汇总为 Markdown/HTML 报告
