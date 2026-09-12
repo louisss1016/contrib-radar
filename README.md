@@ -11,6 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-lightgrey.svg)](./contrib-radar/scripts)
+[![Tests](https://img.shields.io/badge/tests-60%20passed-brightgreen.svg)](./run_tests.py)
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-compatible-purple.svg)](https://agentskills.io)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
@@ -450,6 +451,32 @@ contrib-radar/
     ├── claim_issue.py             #   认领方式检测 + 冲突检查
     └── pr_tracker.py              #   PR 生命周期跟踪 + 下一步动作
 ```
+
+---
+
+## 🧪 测试
+
+零依赖测试套件（仅用 Python 标准库 `unittest`），覆盖打分模型、碰撞检测、技术栈匹配、AI 政策去误报、API 工具函数。
+
+```bash
+python run_tests.py          # 运行全部 60 个测试
+python run_tests.py -v       # 详细输出
+```
+
+```
+Ran 60 tests in 0.003s
+OK
+```
+
+| 测试文件 | 覆盖范围 | 测试数 |
+|----------|---------|--------|
+| `test_scoring.py` | Issue Quality / Feasibility 打分、Stack Match、Score Regression | 32 |
+| `test_collision.py` | Collision Risk 分级（HIGH/MEDIUM/LOW） | 7 |
+| `test_ai_policy.py` | AI 政策去误报（"llm" 单独不触发、禁止性短语、中文） | 8 |
+| `test_github_api.py` | parse_repo / days_ago 纯函数 | 13 |
+| **合计** | | **60** |
+
+**Score Regression Tests**：固定 3 个黄金样本（高/中/低价值 issue），验证打分结果不变。算法调整时必须同步更新期望值，并确认相对排序未被意外改变。
 
 ---
 
