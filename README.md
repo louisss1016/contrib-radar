@@ -59,18 +59,23 @@ python pr_tracker.py <owner/repo> <pr_number>                                # P
 
 ## ✨ 特性
 
-<div align="center">
-
-| | |
-|---|---|
-| **🔍 候选项目发现**<br>按技术栈、star 区间、活跃度筛选，自动排除 fork 和归档仓库 | **🍬 新手甜蜜区**<br>`--beginner` 模式锁定 100~1000 star，竞争小、维护者回复快 |
-| **📊 12 项健康体检**<br>提交活跃度、Issue 关闭率、PR 合并速度、Release 频率、License 等 | **🎯 Issue 启发式打分**<br>0~100 可解释分：清晰度 30 + 标签 15 + 评论 15 + 新鲜度 20 + milestone 20 |
-| **🚗 撞车检测**<br>自动拉取全部 open PR，剔除已被 `fixes #N` 引用的 Issue | **🔄 标签零命中 fallback**<br>标签搜索无结果时自动拉全量 issue，不漏检不打标签的 roadmap issue |
-| **🤖 认领方式检测**<br>自动识别 claim bot（`/claim`）或评论认领，检查 assignee/认领评论/PR 引用冲突 | **📡 PR 生命周期跟踪**<br>CI/Review/可合并性/上游更新一站式检查，自动判断下一步动作 |
-| **🛡️ AI 政策扫描（去误报）**<br>"llm" 单独命中不触发，必须与禁止性动词组合才算限制声明 | **⚡ 零依赖**<br>纯 Python 标准库，6 个脚本可直接读、直接跑 |
-| **📅 每日监控（Route C）**<br>配合定时任务每天扫描新 Issue，输出差异日报 | **🤖 自动贡献模式（Route C+）**<br>状态持久化 + 6 项质量门控 + 2 个人工确认点，高分 issue 自动实现并提 PR |
-
-</div>
+| 能力 | 说明 |
+|------|------|
+| 候选项目发现 | topic / 语言 / star 区间筛选，自动排除 fork 与归档仓库 |
+| 新手甜蜜区模式 | `--beginner`：100~1000 star，竞争小、维护者回复快 |
+| 12 项健康体检 | 提交活跃度、Issue 关闭率、PR 合并速度、Release 频率、贡献指南、License 等 |
+| AI 政策扫描（去误报） | 读取 `CONTRIBUTING.md` 判定 `blocked / mention / ok / unknown`；"llm" 单独命中不触发，必须与禁止性动词组合才算限制声明 |
+| Issue 启发式打分 | 0~100 可解释分：清晰度 30 + 标签 15 + 评论 15 + 新鲜度 20 + milestone 20 |
+| 标签零命中 fallback | 标签搜索无结果时自动拉取全量 open issue，避免漏检不打标签的 roadmap/feature issue |
+| 撞车检测 | 自动拉取全部 open PR，剔除已被 `fixes #N` 引用的 Issue |
+| 认领方式检测 | `claim_issue.py` 自动检测 claim bot（`/claim`）或评论认领，检查 assignee/认领评论/PR 引用冲突 |
+| PR 生命周期跟踪 | `pr_tracker.py` 检查 CI/Review/可合并性/上游更新，自动判断下一步动作（修复 CI/回应 review/rebase/礼貌跟进） |
+| 批量体检 | `repo_health.py repo1 repo2 ...`，单项失败自动降级不中断 |
+| `--json` 输出 | 全部脚本均支持，方便接入其他工具链和定时任务 |
+| 零依赖 | 纯 Python 标准库，无需 `pip install` |
+| TS 生态优先 | 内置前沿 Agent 项目 topic（Vercel AI SDK / Mastra / LangGraph.js / Eliza 等） |
+| 每日监控（Route C） | 配合定时任务每天扫描新出现的可认领 Issue，输出差异日报 |
+| 自动贡献模式（Route C+） | 状态持久化 + 6 项质量门控 + 两个人工确认点 + PR 生命周期跟踪，高分 Issue 自动实现并提交 PR |
 
 ---
 
