@@ -10,7 +10,7 @@
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-compatible-purple.svg)](https://agentskills.io)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-**[快速上手](#-快速上手) · [真实效果](#-真实效果) · [它是做什么的](#-它是做什么的) · [特性](#-特性) · [命令参考](#-命令参考) · [工作流程](#-工作流程) · [设计原则](#-设计原则) · [路线图](#-路线图) · [FAQ](#-faq)**
+**[快速上手](#-快速上手) · [真实效果](#-真实效果) · [它是做什么的](#-它是做什么的) · [特性](#-特性) · [命令参考](#-命令参考) · [工作流程](#-工作流程) · [定时任务配置](#-定时任务配置route-c-自动化) · [设计原则](#-设计原则) · [路线图](#-路线图) · [FAQ](#-faq)**
 
 </div>
 
@@ -244,6 +244,96 @@ $ python pr_tracker.py helsome/folio 72
 - **Route C+ · 自动贡献模式**：状态持久化（`contrib-radar-state.json`）→ 打分筛选 → **人工确认点 1**（选定 issue）→ Baseline 采集 → 认领检测 → 自动实现 → 6 项质量门控（测试零新增失败/typecheck/有测试覆盖/<300行/AI政策/无撞车）→ **人工确认点 2**（提交 PR 前）→ fork/commit/push/create PR → PR 生命周期跟踪（CI/Review/Rebase/跟进）
 
 选定切入点后，可继续走 `references/contribution-workflow.md` 全流程：Baseline 采集 → 认领检测 → 方案设计 → 代码实现 → PR 提交（含可复现测试报告）→ PR 维护（rebase/冲突/review）→ 面试叙事（STAR + 60 秒话术）。
+
+---
+
+## ⏰ 定时任务配置（Route C+ 自动化）
+
+在支持 cron 的 Agent 平台（如豆包）创建每日定时任务，触发后自动执行 Route C+ 全流程：扫描项目 → 筛选 Issue → 认领 → 实现 → 质量门控 → 人工确认 → 提交 PR → 跟踪 PR 生命周期。
+
+### 快速配置
+
+1. 创建一个每天执行的定时任务（建议早上 8:00，cron `0 8 * * *`）
+2. 将下方的 **Query 模板** 复制到任务的 query 字段
+3. 根据你的技术栈和偏好修改 `【用户画像】` 部分
+4. 确保 GitHub MCP/OAuth 已绑定（用于 fork / push / 创建 PR）
+
+### Query 模板（可直接复制）
+
+```text
+本次请求是由「每日开源贡献自动扫描」定时任务到时触发的。
+
+请执行 contrib-radar skill 的 Route C+ 自动贡献模式。
+
+【Skill 位置】
+<把 contrib-radar 目录的绝对路径填在这里，如 ~/.doubao/agent_mode/workspace/.skills/contrib-radar/>
+先读取该目录下的 SKILL.md，严格按其 Route C+ 规范执行。
+
+【用户画像】
+- 技术栈：Python（LangChain / PydanticAI / OpenAI SDK）、TypeScript（React / Node / Electron / Bun）
+- 兴趣方向：AI Agent、AI 应用开发、LLMOps、开发者工具
+- 时间预算：单个 PR 控制在 300 行以内，1~2 天可完成
+- GitHub 账号：<你的 GitHub 用户名>
+- 偏好：commit message 用中文，PR 标题用英文
+
+【每日执行流程】
+1. 读取当前工作目录的 contrib-radar-state.json，恢复上次进度（已扫描 issue、活跃 PR、黑名单、冷却期）
+2. 项目发现：运行 scripts/discover_repos.py，分别用 --language typescript --beginner 和 --language python --beginner，各取 top 5
+3. 健康度筛查：对候选批量运行 scripts/repo_health.py，过滤 AI 政策 blocked 和健康度 < 50% 的
+4. Issue 筛选：对通过筛查的仓库运行 scripts/find_issues.py --min-score 50，取打分最高的 3 个
+5. 认领冲突检查：对 top 候选运行 scripts/claim_issue.py，排除 assignee/认领评论/PR 引用冲突
+6. PR 跟踪：对状态文件中所有 active_prs 运行 scripts/pr_tracker.py，按 next_actions 自动处理（CI 失败则尝试修复、上游更新则 rebase、超 7 天无回应则礼貌跟进），更新状态
+
+【自动实现（每天最多 1 个新 PR）】
+- 从通过筛选的候选中选打分最高、预估改动最小的 1 个 issue（排除已在状态文件中的）
+- 【人工确认点 1】向用户展示：issue 标题/链接/打分/预估工作量/2~3 句实现方案，等待用户回复"确认"后才开始写代码
+- 实现流程：clone 仓库 → baseline 采集（先跑全量测试记录预先存在的失败）→ 认领（bot /claim 发完不要编辑）→ 按 references/contribution-workflow.md 逐步实现 → 补测试
+- 质量门控（全部通过才进入提交）：① 原有测试零新增失败 ② typecheck/lint 通过 ③ 新增代码有测试覆盖 ④ 改动 < 300 行 ⑤ AI 政策非 blocked ⑥ 提交前复核无撞车
+- 【人工确认点 2】向用户展示：改动文件清单 + 可复现测试报告（环境/命令/pass-fail 数量/baseline 对比）+ PR 描述草稿，等待用户回复"确认提交"后才执行 GitHub 写操作
+- 提交：fork（如未 fork）→ 创建 feat/<issue>-<desc> 分支 → Conventional Commits 拆分 2~4 个 commit → push → 创建 PR（标题英文、body 含可复现测试报告、Closes #N）
+- 更新状态文件：标记该 issue 为 pr_submitted，PR 加入 active_prs
+
+【输出要求】
+- 每日扫描日报写入 daily-issue-scan-<YYYY-MM-DD>.md：今日新增候选、筛选结果、活跃 PR 状态变化
+- 到达人工确认点时，明确提示"需要你确认后才能继续"，不要自行跳过
+- 没有合适候选或全部在冷却期时，说明原因并列出被排除的仓库及理由
+- 状态持久化到 contrib-radar-state.json，下次运行时读取
+- 所有操作在当前工作目录下执行，项目 clone 到子目录
+```
+
+### 配置说明
+
+| 配置项 | 说明 | 建议值 |
+|--------|------|--------|
+| 执行时间 | 每天触发时间，建议你起床后、有时间处理人工确认点时 | 每天 08:00（cron `0 8 * * *`） |
+| Skill 位置 | contrib-radar 目录的绝对路径，定时任务触发时 agent 需要能找到 | 安装到全局 skills 目录后可省略此行 |
+| 技术栈 | 决定 discover_repos.py 的 `--language` 参数 | 按你的实际技术栈修改 |
+| 兴趣方向 | 决定 `--topic` 参数 | ai-agent / mcp / devtools 等 |
+| 每天最多 PR 数 | 防止贪多嚼不烂，同一仓库同时最多 1 个活跃 PR | 1 个（默认） |
+| 人工确认点 | 两个安全闸门：选定 issue 后、提交 PR 前 | 保留（不建议关闭） |
+
+### 状态文件
+
+定时任务会在当前工作目录维护 `contrib-radar-state.json`，记录：
+
+```json
+{
+  "scanned_issues": {"owner/repo#25": {"first_seen": "2026-09-11", "status": "pr_submitted"}},
+  "active_prs": [{"repo": "helsome/folio", "pr_number": 72, "status": "awaiting_review"}],
+  "blacklisted_repos": [],
+  "cooldown": {"owner/repo": "2026-09-20"},
+  "daily_stats": {"2026-09-11": {"scanned": 27, "candidates": 3, "implemented": 1}}
+}
+```
+
+这个文件是自动贡献模式的核心——没有它，每天会重复扫描同一个 issue、重复实现、重复提交。
+
+### 注意事项
+
+- **GitHub 认证**：提交步骤（fork / push / create PR）依赖 GitHub MCP/OAuth 连接或 `gh` CLI 已登录。认证不可用时，自动实现和材料准备不受影响，提交步骤会提示你手动执行
+- **人工确认点**：query 中设了两个确认点，定时任务触发后会停下来等你回复，不会全自动提交。这是故意的安全设计
+- **Windows 环境**：如果在 Windows 上运行，注意 PowerShell 不支持 `&&`、`curl` 是别名、`git rebase --continue` 会打开 vim（用 `$env:GIT_EDITOR='true'` 跳过），这些已在 `contribution-workflow.md` 中说明
+- **冷却期**：PR 被关闭后该仓库进入 7 天冷却期，避免反复提交被拒
 
 ---
 
