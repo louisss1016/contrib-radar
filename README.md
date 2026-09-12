@@ -487,7 +487,7 @@ OK
 1. **零依赖、可审计**：6 个脚本纯标准库实现，代码可直接读、可直接跑，不引入供应链风险
 2. **对 GitHub API 友好**：未认证时只对 search 端点限速打点（6.2s），403 时按 `X-RateLimit-Reset` 自适应等待；配置 token 或使用 MCP/OAuth 后自动取消节流
 3. **AI 时代意识**：AI 贡献政策扫描（去误报）+ 撞车检测 + 认领冲突检查，是 2026 年开源贡献绕不开的三个新变量
-4. **可解释的确定性输出**：打分权重透明（清晰度 30 / 标签 15 / 评论 15 / 新鲜度 20 / milestone 20），可审计、可复现
+4. **可解释的确定性输出**：双维度打分权重透明（Issue Quality：清晰度 30 / 标签 15 / 新鲜度 25 / milestone 20 / 讨论 10；Feasibility：撞车 30 / 修改范围 25 / 新手友好 25 / 技术栈匹配 20），可审计、可复现
 5. **状态驱动的自动化**：Route C+ 通过 `contrib-radar-state.json` 持久化进度，配合质量门控和人工确认点，在自动化和安全性之间取得平衡
 6. **遵守 Agent Skills 标准**：`SKILL.md` 自包含、name 用 kebab-case、description 写明"做什么 + 何时用"，可被主流 Agent 平台自动发现
 
@@ -506,6 +506,17 @@ OK
 - 新增 `pr_tracker.py`：PR 生命周期跟踪 + 下一步动作判断
 - `contribution-workflow.md`：Baseline 采集、认领检测、可复现测试报告模板、rebase/冲突处理、Windows 注意事项
 - `SKILL.md`：降级链加 MCP/OAuth、Route C+ 扩展为完整自动贡献流程（状态持久化 + 质量门控 + 人工确认点 + PR 跟踪）
+
+**v3.3（已交付）**：第一阶段决策可解释性升级——
+- `find_issues.py`：新增 Collision Risk 三级分级（LOW / MEDIUM / HIGH），每级附原因与行动建议，HIGH 默认隐藏
+- `find_issues.py`：新增 "Why this issue?" 决策理由清单（✓/⚠），逐条说明推荐与存疑依据
+- README：新增 Case Study 漏斗图（From 1,000 Issues → 3 Contributions）与 Core Scripts vs Agent Workflow 能力边界表
+- 项目定位收紧为 *Find the right open-source contribution before you write code*；`SKILL.md` 同步更新
+
+**v3.4（已交付）**：打分模型双维度升级——
+- Contribution Score 拆分为 Issue Quality（清晰度 30 + 标签 15 + 新鲜度 25 + milestone 20 + 讨论 10）与 Contribution Feasibility（撞车 30 + 修改范围 25 + 新手友好 25 + 技术栈匹配 20），最终分 = Quality × 0.5 + Feasibility × 0.5
+- `find_issues.py`：新增 `--stack` 技术栈匹配度（Stack Match 百分比 + 逐项 ✓/—），匹配仓库主语言与 issue 正文关键词
+- README / `SKILL.md`：同步输出示例、参数与打分说明
 
 **候选方向**（欢迎 Issue 讨论，暂未排期）：
 
