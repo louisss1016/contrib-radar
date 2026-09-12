@@ -1,6 +1,7 @@
 <div align="center">
 
-# 📡 Contrib Radar
+# 📡
+# Contrib Radar
 
 **帮你找到值得贡献的开源项目，锁定不撞车的好上手 Issue，输出一份可执行的贡献方案，甚至自动实现并提交 PR。**
 
