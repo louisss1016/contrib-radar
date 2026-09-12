@@ -8,13 +8,14 @@ agent_created: true
 
 ## Overview
 
-帮助用户完成开源贡献的前半段链路：**找到合适的项目 → 找到合适的切入点（PR/Issue 方向）**。
+帮助用户完成开源贡献的完整链路：**找到合适的项目 → 找到合适的切入点（PR/Issue 方向）→ 实现 → 提交 → 维护**。
 内容源自《AI Agent 开源项目贡献完整流程手册》，并融合了 GitHub 官方指南与社区最佳实践（项目健康度打分、聚合站点、维护者沟通规范）。
 
 核心原则：**先沟通再动手、小步快跑、一切结论定位到具体文件与函数，禁止泛泛而谈、禁止编造数据。**
 
 v3 更新：脚本层基于共享封装 `scripts/github_api.py`（统一限速/降级）；`find_issues.py` 新增启发式打分与撞车检测（剔除已被 open PR 引用的 Issue）；`repo_health.py` 新增 AI 生成代码政策检查；`discover_repos.py` 新增新手甜蜜区模式（--beginner）与 --json 导出。
-v3.1 更新：新增 Route C 持续监控（每日定时任务）与 Route C+（自动实现 + 人工确认提交）——每天扫描新出现的可认领 Issue，发现高分条目自动准备好完整提交材料，由用户确认后提交。
+v3.1 更新：新增 Route C 持续监控（每日定时任务）与 Route C+（自动实现 + 人工确认提交）。
+v3.2 更新：基于实战反馈的全链路增强——`find_issues.py` 标签零命中自动 fallback 全量 issue + milestone 打分维度；`repo_health.py` AI 政策去误报；`contribution-workflow.md` 补认领检测/baseline/rebase/可复现测试报告/Windows 坑；SKILL.md 降级链加 MCP/OAuth；Route C+ 扩展为完整自动贡献流程（状态持久化 + 质量门控 + PR 生命周期跟踪）。
 
 ## 触发条件
 
@@ -23,6 +24,7 @@ v3.1 更新：新增 Route C 持续监控（每日定时任务）与 Route C+（
 - 用户想挖 good first issue、评估某项目是否值得投入
 - 用户想把开源贡献作为面试素材来规划
 - 用户要求"每天/定期盯一下有哪些可认领的 Issue"（Route C，可由定时任务触发）
+- 用户要求"发现值得做的 Issue 就自动实现并提交 PR"（Route C+ 自动贡献模式）
 
 ## 输入
 
@@ -38,7 +40,7 @@ v3.1 更新：新增 Route C 持续监控（每日定时任务）与 Route C+（
 ```
 用户提供仓库 URL？
 ├── 是 → Route B：直接分析该项目的 PR/Issue 切入点
-├── 否 + 用户要求每日/定期监控 → Route C：持续监控（每日定时任务，含 C+ 自动实现+人工确认）
+├── 否 + 用户要求每日/定期监控或自动贡献 → Route C / C+
 └── 否 → Route A：发现候选项目 → 用户选定一个 → 进入 Route B
 ```
 
@@ -46,15 +48,17 @@ v3.1 更新：新增 Route C 持续监控（每日定时任务）与 Route C+（
 
 所有 GitHub 数据获取按以下顺序降级，任一级失败自动降下一级：
 
-1. `gh` CLI（已安装且已登录时）：`gh search repos` / `gh search issues`
-2. skill 自带脚本直连 API（共享封装 `scripts/github_api.py`，零依赖，支持 GITHUB_TOKEN）：
+1. **已绑定的 GitHub MCP / OAuth 连接**（如 `github-remote` skill 的 MCP 工具）：最可靠，走 OAuth 认证，不受未认证限流影响，支持读写操作
+2. `gh` CLI（已安装且已登录时）：`gh search repos` / `gh search issues` / `gh pr create`
+3. skill 自带脚本直连 API（共享封装 `scripts/github_api.py`，零依赖，支持 GITHUB_TOKEN）：
    `scripts/discover_repos.py` / `scripts/find_issues.py` / `scripts/repo_health.py`
-3. WebFetch 直接抓 GitHub 页面或 API
-4. WebSearch（最后手段，数据可靠性最低，需标注"未实时核验"）
+4. WebFetch 直接抓 GitHub 页面或 API
+5. WebSearch（最后手段，数据可靠性最低，需标注"未实时核验"）
 
 > **限流提示**：未认证时 Search API 约 10 次/分、core API 约 60 次/时；脚本已内置自适应限速
 > （只对 search 端点打点，403 时按 X-RateLimit-Reset 等待重试）。多仓库批量筛查强烈建议设置
-> `GITHUB_TOKEN`（core 5000/时、Search 30/分），避免等待或降级。
+> `GITHUB_TOKEN`（core 5000/时、Search 30/分）或使用已绑定的 MCP/OAuth 连接，避免等待或降级。
+> **注意**：未认证 API 限流耗尽后，MCP/OAuth 连接不受影响，应优先切换到 MCP 通道。
 
 ## Route A：项目发现（无 URL 时）
 
@@ -81,11 +85,12 @@ v3.1 更新：新增 Route C 持续监控（每日定时任务）与 Route C+（
 
 1. **项目理解**：读 README.md / CONTRIBUTING.md / CHANGELOG.md / 主入口文件（不存在则跳过）。克隆或在线阅读均可。输出：目录结构（depth=3）+ 核心模块标注 + 2~3 句话概括项目核心机制。
 2. **Issue 列表筛选**：先运行 `scripts/find_issues.py <owner/repo>` 拿到机筛候选
-   （默认新手友好标签 / open / 近 60 天活跃 / 无 assignee / 已剔除被 open PR 引用的撞车条目，并附 0~100 启发式打分）。
+   （默认新手友好标签 / open / 近 60 天活跃 / 无 assignee / 已剔除被 open PR 引用的撞车条目，并附 0~100 启发式打分；
+   **标签零命中时自动 fallback 到全量 open issue 列表**，避免漏检不打标签的 roadmap issue）。
    再逐条阅读正文与评论做语义判断（评论中是否有人声称认领、描述是否清晰、改动是否 1~3 个文件可控）。
    按模板表格输出。需要更大候选面时加 `--include-bugs`。
 3. **AI 政策前置检查**：读取 CONTRIBUTING.md / 仓库政策，扫描 AI 生成代码限制关键词
-   （ai-generated / copilot / llm / no ai 等）。命中"明确禁止"时，标注高风险并建议用户改用
+   （v3.2 已去误报："llm" 单独命中不触发，必须与禁止性动词组合才算限制声明）。命中"明确禁止"时，标注高风险并建议用户改用
    "理解需求后自行实现、明确标注无 AI 辅助"的方式；命中"相关表述"时提示人工确认口径。
 4. **架构层缺陷分析**：AI Agent 类项目按 7 个维度逐一检查（任务规划 / 多 Agent 协作 / 上下文管理 / Human-in-the-loop / 评估框架 / Tool 检索路由 / Streaming 可见性）；非 Agent 项目改用通用维度（见 references 附录）。**每个维度必须定位到具体文件路径 + 函数名**，按"现状/缺陷/影响程度/改进方向/改动范围/面试叙事角度"六段输出。
 5. **Top 3 贡献建议**：综合两个维度，按模板输出排序建议（含入口文件、适配度、工作量、面试价值、风险点）。输出前对照 `references/example-analysis.md` 的格式自检清单校准颗粒度。
@@ -112,51 +117,151 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
 4. **限速注意**：未认证 Search API 10/min——跨仓库扫描控制搜索次数（每语言 1 次 + 撞车 1 次）；
    设置 `GITHUB_TOKEN`（search 30/min）可放开。脚本见 `scripts/`。
 
-### Route C+：自动实现 + 人工确认提交（默认模式）
+### Route C+：自动贡献模式（发现 → 实现 → 提交 → 维护）
 
-当定时任务或用户要求"发现值得做的 Issue 就准备好提交"时启用。**默认不自动提交**：
+当用户要求"发现值得做的 Issue 就自动实现并提交 PR"、或定时任务配置为自动贡献模式时启用。
 
-1. **打分筛选**：对候选按可上手度打分（描述清晰度 / 标签 / 评论甜蜜区 / 新鲜度），
-   满足以下条件才进入自动实现：预估改动 1~3 个文件、工作量可控、仓库 AI 政策非 blocked。
-2. **自动实现**：按 `references/contribution-workflow.md` 的完整流程执行——
-   项目理解 → 最小侵入实现（逐步可运行）→ 补必要测试 → 改动控制在 300 行内。
-3. **准备提交材料**：参考 `references/communication-templates.md` 的优秀 PR 写法，
-   撰写完整 PR 描述（Problem/Solution/Changes/Testing/Notes for Reviewer，标注 Fixes #N），
-   把实现代码、测试、改动清单与 PR 描述整理成"待提交材料"展示给用户。
-4. **人工确认提交**：**用户确认前不得执行任何 GitHub 写操作**（fork / push / create PR）。
-   用户确认后，按完整流程提交：fork 目标仓库 → 创建分支 → Conventional Commits 拆分
-   2~4 个 commit → push → 创建 Pull Request。修改的源码必须走完整提交流程。
-5. **认证要求**：提交步骤依赖 GitHub 认证（OAuth 连接或 GITHUB_TOKEN）；认证不可用时
-   生成待提交材料不受影响，提交步骤提示用户完成认证后手动执行。
-6. **红线**：仓库 AI 政策明确禁止 AI 生成代码（blocked）时不得生成提交材料；提交前再次复核无撞车。
+**核心设计：状态持久化 + 质量门控 + 两个人工确认点。**
+
+#### 0. 状态持久化（必须）
+
+定时任务是无状态的，但贡献流程是有状态的。每次运行前读取 `contrib-radar-state.json`（当前工作目录），运行后更新：
+
+```json
+{
+  "scanned_issues": {
+    "owner/repo#25": {"first_seen": "2026-09-11", "status": "pr_submitted", "pr_url": "https://github.com/.../pull/72"}
+  },
+  "active_prs": [
+    {"repo": "helsome/folio", "pr_number": 72, "status": "awaiting_review", "last_check": "2026-09-12T08:00:00Z"}
+  ],
+  "blacklisted_repos": [],
+  "cooldown": {"owner/repo": "2026-09-20"},
+  "daily_stats": {"2026-09-11": {"scanned": 27, "candidates": 3, "implemented": 1, "pr_submitted": 1}}
+}
+```
+
+状态字段说明：
+- `scanned_issues`：防止重复扫描/实现同一个 issue
+- `active_prs`：跟踪已提交 PR 的生命周期
+- `blacklisted_repos`：AI 政策 blocked 或维护者明确拒绝的仓库
+- `cooldown`：PR 被关闭后该仓库进入冷却期（默认 7 天），避免反复提交被拒
+- `daily_stats`：每日统计，用于复盘
+
+#### 1. 打分筛选（自动）
+
+对候选按可上手度打分（描述清晰度 / 标签 / milestone / 评论甜蜜区 / 新鲜度），满足以下**全部**条件才进入自动实现：
+- 预估改动 1~3 个文件
+- 工作量可控（预计 < 300 行）
+- 仓库 AI 政策非 blocked
+- 该 issue 未在 `scanned_issues` 中（未处理过）
+- 该仓库不在 `blacklisted_repos` 和 `cooldown` 中
+- 该仓库当前没有用户的活跃 PR（同一仓库同时最多 1 个活跃 PR）
+
+#### 2. 人工确认点 1：选定 issue 后、开始实现前
+
+向用户展示：
+- 选定的 issue（标题、链接、打分、预估工作量）
+- 简要实现方案（2~3 句话）
+- 风险点
+
+**用户确认后才开始实现。** 用户拒绝则标记该 issue 为 `skipped_by_user`，继续下一个候选。
+
+#### 3. 自动实现（按 `references/contribution-workflow.md`）
+
+执行完整流程：
+- Baseline 采集（改代码前先跑全量测试记录预先存在的失败）
+- 认领方式检测（bot /claim 或评论认领）
+- 方案设计 → 接口定义 → 核心逻辑 → 集成 → 测试
+- 每步可验证，项目始终可运行
+
+#### 4. 质量门控（硬门槛，不通过不提交）
+
+实现完成后必须通过以下**全部**检查才允许进入提交阶段：
+- [ ] 项目原有测试全部通过（或新增失败为 0，与 baseline 对比）
+- [ ] typecheck / lint 通过
+- [ ] 新增代码有测试覆盖（至少 2~3 个核心用例）
+- [ ] 改动行数在阈值内（默认 300 行，超出则建议拆分或标记需人工确认）
+- [ ] AI 政策非 blocked
+- [ ] 无撞车（提交前最后复核该 issue 无新 open PR 引用）
+
+任何一项不通过 → 记录失败原因到状态文件 → **不提交** → 下次运行时重试（最多 3 次）或跳过。
+
+#### 5. 人工确认点 2：实现完成、测试通过后、提交 PR 前
+
+向用户展示完整的"待提交材料"：
+- 改动文件清单 + diff 摘要
+- 可复现测试报告（环境/命令/pass-fail 数量/baseline 对比）
+- PR 描述草稿（Problem/Solution/Changes/Testing/Notes）
+- Commit 拆分方案
+
+**用户确认后才执行提交。** 提交步骤：
+1. fork 目标仓库（如未 fork）
+2. 创建分支（`feat/<issue-number>-<short-desc>`）
+3. Conventional Commits 拆分 2~4 个 commit
+4. push 到 fork
+5. 创建 Pull Request（标题/描述用准备好的材料，关联 `Closes #N`）
+
+#### 6. PR 生命周期跟踪（每日自动）
+
+提交后不是结束，每次定时任务运行时检查所有 `active_prs`：
+- **CI 状态**：查 check runs，失败则自动尝试修复（如果是简单的 lint/type 错误）或通知用户
+- **Review 意见**：有新 review 评论则通知用户，简单的修改（拼写、格式）可自动处理
+- **上游更新**：上游 main 有新 commit 且与 PR 文件有交集 → 自动 rebase + 重跑测试 + force push（rebase 冲突复杂时通知用户）
+- **无回应跟进**：超过 7 天无 review 回应 → 自动发礼貌跟进评论（"Gentle ping: this PR is ready for review when you have time."）
+- **被合并** → 更新状态为 `merged`，记录成果，从 active_prs 移除
+- **被关闭** → 更新状态为 `closed`，记录原因，该仓库进入 cooldown
+
+#### 7. 并发与速率控制
+
+- 每天最多实现 N 个 issue（默认 1，可配置），避免贪多嚼不烂
+- 同一仓库同时最多 1 个活跃 PR
+- GitHub API 调用全局限速（脚本已处理；跨天运行时状态文件中记录剩余配额）
+- 优先使用 MCP/OAuth 连接，避免未认证限流
+
+#### 8. 认证要求
+
+提交步骤依赖 GitHub 认证（MCP/OAuth 连接、`gh` CLI 已登录、或 `GITHUB_TOKEN`）；
+认证不可用时，自动实现和材料准备不受影响，提交步骤提示用户完成认证后手动执行或下次运行时重试。
+
+#### 9. 红线
+
+- 仓库 AI 政策明确禁止 AI 生成代码（blocked）时不得生成提交材料
+- 提交前必须复核无撞车（该 issue 无新 open PR 引用、无新 assignee）
+- 质量门控不通过不得提交
+- 用户未确认不得执行任何 GitHub 写操作（fork / push / create PR / 评论）
 
 ## 后续阶段（可选，用户确认后执行）
 
 用户选定切入点并想继续推进时，按 `references/contribution-workflow.md` 执行：
 
 - **方案设计**：问题边界定义 → 2~3 个技术方案 + 对比矩阵 → 文件级实现规划 → 起草发给维护者的英文评论（≤150 词，先沟通再写代码）
-- **代码实现**：接口先行 → 逐步实现每步可运行 → 最小侵入 → 风格一致 → 验证（demo + 单测）
-- **PR 提交**：Conventional Commits 拆分 2~4 个 commit → PR 描述模板（Problem/Solution/Changes/Testing/Notes for Reviewer）→ 提交后礼貌跟进
+- **代码实现**：Baseline 采集 → 接口先行 → 逐步实现每步可运行 → 最小侵入 → 风格一致 → 验证（demo + 单测）
+- **PR 提交**：Conventional Commits 拆分 2~4 个 commit → PR 描述模板（含可复现测试报告）→ 提交后礼貌跟进
+- **PR 维护**：rebase 最新 main → 解决冲突 → 重跑测试更新报告 → force push
 - **面试叙事**：按 STAR 六要素整理（背景/贡献/过程/成果/困难/反思），可再压缩为 60 秒面试话术
 
 ## 硬性规则
 
-- **禁止编造**：Stars、日期、Issue 编号等数据必须来自实时查询（WebFetch / gh CLI / 自带脚本），查不到就明说。
-- **先认领再动手**：建议用户动手前先在 Issue 下评论认领，避免与他人的工作冲突。
+- **禁止编造**：Stars、日期、Issue 编号等数据必须来自实时查询（MCP / WebFetch / gh CLI / 自带脚本），查不到就明说。
+- **先认领再动手**：动手前先在 Issue 下认领（bot `/claim` 或评论），避免与他人的工作冲突。发完 `/claim` 不要编辑评论。
+- **Baseline 先行**：改代码前先跑全量测试记录预先存在的失败，改完后对比，只有新增失败才是自己的问题。
+- **可复现测试报告**：PR 描述的 Testing 字段必须包含环境（runtime/OS/arch）、精确命令、pass/fail/skip 数量、预先存在的失败列表。
 - **遵守仓库规范**：任何产出建议必须以 CONTRIBUTING.md 为准；没有贡献指南的项目要标注风险。
 - **AI 政策红线**：仓库明确禁止 AI 生成代码贡献时，不得建议"直接让 AI 写代码提交"；应提示理解后自行实现，或换项目。
 - **撞车意识**：AI 时代 issue 被认领/被提交 PR 的速度明显加快，动手前必须复核该 Issue 是否已有人在做（含 open PR 引用）。
 - **范围控制**：单个 PR 建议改动控制在 300 行以内，超出则建议拆分。
+- **PR 维护**：上游 main 更新后及时 rebase，冲突解决后必须重跑测试，force push 用 `--force-with-lease`。
 - **非 GitHub 平台**（GitLab/Gitee）：流程通用，但自带脚本仅支持 GitHub，需改用 WebFetch 人工核查活跃度。
 
 ## Resources
 
 - `references/project-discovery.md` — 项目筛选标准、活跃度指标、GitHub 搜索语法（日期动态化示例）、聚合站点、健康度打分模型
 - `references/opportunity-analysis.md` — 贡献类型、Issue 筛选模板、AI 政策前置检查、7 维架构分析清单、Top 3 输出模板
-- `references/contribution-workflow.md` — 方案设计 / 代码实现 / PR 提交 / 面试叙事（STAR + 60 秒话术）全流程模板
+- `references/contribution-workflow.md` — Baseline 采集 / 认领检测 / 方案设计 / 代码实现 / PR 提交（含可复现测试报告模板）/ PR 维护（rebase/冲突）/ 面试叙事（STAR + 60 秒话术）/ 跨平台注意事项
 - `references/example-analysis.md` — 端到端分析示例与格式自检清单（输出颗粒度校准用）
 - `references/communication-templates.md` — 英文沟通模板：Issue 认领、方向提案、PR 描述、回应 review、礼貌跟进
 - `scripts/github_api.py` — 共享 GitHub API 封装（统一请求/限速/降级/仓库解析），三个脚本共用
 - `scripts/discover_repos.py` — 候选项目发现：`python scripts/discover_repos.py --topic ai-agent --language typescript [--beginner] [--json]`
-- `scripts/repo_health.py` — 仓库健康度体检（支持批量 + AI 政策检查）：`python scripts/repo_health.py owner/repo [owner/repo2 ...] [--json]`
-- `scripts/find_issues.py` — 可认领 Issue 机筛与打分（含撞车检测）：`python scripts/find_issues.py owner/repo [--include-bugs] [--json]`
+- `scripts/repo_health.py` — 仓库健康度体检（支持批量 + AI 政策检查，v3.2 去误报）：`python scripts/repo_health.py owner/repo [owner/repo2 ...] [--json]`
+- `scripts/find_issues.py` — 可认领 Issue 机筛与打分（含撞车检测 + 标签零命中 fallback + milestone 维度）：`python scripts/find_issues.py owner/repo [--include-bugs] [--json] [--no-fallback]`

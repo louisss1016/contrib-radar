@@ -2,6 +2,54 @@
 
 > 仅在用户已选定切入点并要求继续推进时使用本文件。
 
+## 零、实现前准备（新增）
+
+### Baseline 采集（必须先做）
+
+改代码前先跑一次全量测试，记录预先存在的失败列表，改完后对比——**只有新增失败才是自己的问题**。
+
+```bash
+# 1. 记录 baseline
+{项目测试命令} > baseline-test.txt 2>&1
+# 2. 记录失败的测试名列表
+grep -E "(fail|error)" baseline-test.txt > baseline-failures.txt
+```
+
+改完后重跑，与 baseline 对比：
+- 失败数不变或减少 → 你的改动没破坏现有功能
+- 新增失败 → 必须修复或明确说明是 flaky
+
+### 认领方式检测（动手前必须确认）
+
+不同仓库的认领机制不同，先检测再认领：
+
+1. **检查 `.github/workflows/` 目录**：
+   - 有 `issue-claim.yml` 或类似 bot → 用 `/claim` 命令认领
+   - **关键**：发完 `/claim` 后**不要编辑评论**，bot 只在评论 created 时触发，编辑不触发
+   - 等 bot 回复确认（通常会评论 "Assigned!" 或类似）
+2. **没有 claim bot**：
+   - 在 issue 下评论认领，如 "I'd like to work on this. Could you assign it to me?"
+   - 等维护者回复或手动 assign
+3. **认领冲突检测**：
+   - 评论中是否有人声称在做（"I'll take this" / "working on it" / "on it"）
+   - 是否已有 open PR 引用该 issue（fixes #N / closes #N）
+   - 是否已有 assignee
+   - 以上任一命中 → 换一个 issue，不要撞车
+
+### 跨平台注意事项
+
+**Windows / PowerShell 环境常见坑：**
+- `&&` 不支持 → 用 `;` 分隔命令
+- `curl` 是 `Invoke-WebRequest` 别名，不支持 `-L` → 用 `curl.exe`
+- `git rebase --continue` 会打开 vim 卡住 → 用 `$env:GIT_EDITOR='true'; git rebase --continue`
+- symlink 测试在 Windows 上必挂（需 Developer Mode 或管理员）→ 标记为预先存在的平台相关失败
+- 路径分隔符用 `\`，但 git 内部用 `/`，脚本里尽量用 `os.path.join`
+- PowerShell 会把 git/bun 的 stderr 输出当 `NativeCommandError`（exit code 1），实际操作可能已成功，需看 stdout 内容判断
+
+**Linux/macOS：** 无特殊坑，按标准流程即可。
+
+---
+
 ## 一、技术方案设计
 
 ### 上下文注入（先整理再开始）
@@ -67,6 +115,8 @@
 2. 提议的解决方向（只说方向，不说全部细节）
 3. 询问是否有兴趣接受这类 PR、是否已有计划
 
+---
+
 ## 二、代码实现
 
 ### 实现前的准备（未完成禁止写代码）
@@ -74,12 +124,14 @@
 1. 阅读所有需要修改的文件，理解当前实现
 2. 检查代码风格规范：有无 .eslintrc / pyproject.toml / ruff.toml？命名风格（snake_case / camelCase）？注释和 docstring 习惯？类型标注完整程度？
 3. 确认主分支可正常运行（跑通 README quickstart 或现有测试）
+4. **Baseline 采集**（见上方第零节）
 
 ### 实现原则
 
 - **逐步实现，每步可验证**：严格按实现步骤顺序，每完成一步项目必须仍可运行
 - **最小侵入性**：优先扩展而不是修改现有函数；必须修改时只改必须改的部分；新增公共接口保持向后兼容
 - **风格一致性**：命名、注释、类型标注与现有代码一致；不引入项目未使用的新依赖，除非确实必要
+- **大文件编辑策略**：修改超过 100 行的文件时，优先全量重写而非逐处编辑，避免部分修改导致不一致
 
 ### 实现流程
 
@@ -95,6 +147,8 @@
 - 两种实现方式各有利弊，需要人工决策
 - 需要引入新的第三方依赖
 
+---
+
 ## 三、PR 提交
 
 ### Commit 拆分
@@ -106,20 +160,75 @@
 # type: feat / fix / refactor / test / docs / chore
 ```
 
-### PR 描述模板
+**Commit message 语言**：跟随仓库现有 commit 的语言习惯。如果仓库主要是英文 commit，用英文；如果是中文项目，可用中文。不确定时用英文（国际通用）。
+
+### PR 描述模板（强制可复现格式）
 
 - **标题：** `{type}({scope}): {一句话描述}`
 - **Problem**：描述当前存在的问题（客观陈述，不带情绪）
 - **Solution**：本 PR 的解决思路，以及为什么选择这个方案
-- **Changes**：新增/修改了什么
-- **Testing**：如何验证改动有效、测试覆盖了哪些场景
+- **Changes**：新增/修改了什么（文件清单 + 每文件一句话）
+- **Testing（可复现测试报告，必须包含以下字段）**：
+
+  ```
+  **Environment**
+  - Runtime: {如 Bun 1.4.2 / Python 3.11.4 / Node 20.10.0}
+  - OS: {如 Windows NT 10.0.22631.0 (Win11 23H2) / macOS 14.5 / Ubuntu 22.04}
+  - Arch: {AMD64 / ARM64}
+
+  **Test Commands & Results**
+  1. `{专项测试命令，如 bun test packages/xxx/foo.test.ts}`
+     → {N} pass, {M} fail, {K} skip ({X} expect calls)
+  2. `{全量测试命令，如 bun test --isolate}`
+     → {N} pass, {M} fail, {K} skip ({X} expect calls, {Y} files, {Z}s)
+  3. `{类型检查/lint 命令，如 bun run typecheck / npm run lint}`
+     → {通过/失败，失败列出具体错误}
+
+  **Pre-existing Failures**
+  - {列出 baseline 中已存在的失败，或 "none"}
+  - {如果有 flaky 测试，注明"单独重跑通过，与本 PR 无文件交集"}
+  ```
+
 - **Notes for Reviewer**：需要 reviewer 重点关注的地方，或有意为之的设计决策
+- **关联 Issue**：`Closes #{issue_number}` 或 `Fixes #{issue_number}`
 
-### 提交后跟进
+### 提交后跟进与 PR 维护（新增）
 
-- 时常关注维护者的 review 意见，及时响应（数日内）
+#### 日常跟踪
+- 提交后 24 小时内关注 CI 状态，有失败立即修复
+- 关注 review 意见，数日内响应
 - 超过 1~2 周无回应可礼貌跟进（评论或邮件），不要催促
-- Review 意见逐条回应，修改后说明改动点
+
+#### Rebase 与冲突处理
+当上游 main 有新 commit 合入（尤其是修改了同一文件的 PR），需要 rebase：
+
+```bash
+# 1. 拉取最新 main
+git fetch origin main
+# 2. rebase
+git rebase origin/main
+# 3. 解决冲突后
+git add <冲突文件>
+# 4. 继续 rebase（非交互模式，避免 vim 卡住）
+$env:GIT_EDITOR='true'; git rebase --continue
+# 5. 重跑测试确认没破
+{测试命令}
+# 6. 更新 PR body 中的测试报告
+# 7. force push（用 --force-with-lease 更安全）
+git push --force-with-lease origin <分支名>
+```
+
+**冲突解决原则**：
+- 保留两边的功能，不要简单选 ours/theirs
+- 合并后重跑测试，确认两边的功能都正常
+- 如果冲突复杂无法判断，停下来问维护者或用户
+
+#### Review 意见处理
+- 每条 review 意见逐条回应（"已修改" / "不同意，因为..." / "已确认是预期行为"）
+- 修改后说明改动点（"已在 commit abc123 中修改"）
+- 不同意的意见要礼貌解释理由，不要直接忽略
+
+---
 
 ## 四、面试叙事框架（STAR 六要素）
 
