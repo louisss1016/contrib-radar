@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GitHub 仓库健康度体检（v3，零第三方依赖，基于共享 github_api 模块）。
+"""GitHub 仓库健康度体检（v3.1，零第三方依赖，基于共享 github_api 模块）。
 
 用法:
     python repo_health.py owner/repo
@@ -13,12 +13,9 @@
 输出: 各指标红绿灯（对照《开源手册》健康标准）+ 汇总评分。
 单项指标查询失败时降级为 ⚪ 未知，不影响其余指标输出。
 
-v3 相对 v2 的变化:
-1. 限速由 github_api.py 统一管理（只对 search 打点，403 自适应等待，有 token 不打点），
-   批量体检不再因全局 6.5s 停顿而拖慢数分钟。
-2. 新增 AI 政策检查：读取 CONTRIBUTING.md 内容，扫描 AI 生成代码禁令关键词。
-3. 搜索类指标按单项降级（不再因一项失败而整组标记未知）。
-4. 新增 --json 输出，供导出与后续流程复用。
+v3.1 相对 v3 的变化:
+1. AI 政策检查去误报："llm" 单独命中不再触发（AI 项目的 CONTRIBUTING 里自然会写 LLM），
+   必须与禁止性动词组合才视为限制声明。
 """
 
 import argparse
@@ -27,10 +24,17 @@ import sys
 
 import github_api as gh
 
-# AI 生成代码政策检查关键词（命中任意一个即视为存在 AI 贡献限制声明）
-AI_POLICY_KEYWORDS = [
-    "ai-generated", "ai generated", "generated code", "ai-assisted",
-    "copilot", "chatgpt", "llm", "do not use ai", "no ai", "prohibit ai",
+# AI 生成代码政策检查——禁止性短语（必须包含动词+对象，避免误报 AI 项目的正常提及）
+AI_POLICY_BLOCKED_PHRASES = [
+    "do not use ai", "no ai generated", "no ai-assisted", "prohibit ai",
+    "ai-generated contributions are not", "not accept ai generated",
+    "ban ai generated", "forbid ai", "ai generated code is not allowed",
+    "do not use copilot", "no copilot", "禁止使用 ai", "不接受 ai 生成",
+]
+# 提及性关键词（仅触发 mention，需人工确认口径）
+AI_POLICY_MENTION_KEYWORDS = [
+    "ai-generated", "ai generated code", "ai-assisted", "copilot",
+    "chatgpt", "do not use ai", "no ai", "prohibit ai",
 ]
 
 # 常见 CONTRIBUTING 路径（按出现顺序探测）
@@ -51,29 +55,37 @@ def ai_policy_check(owner, repo):
 
     返回 (状态, 说明)：状态为 'blocked'（明确禁止）/ 'mention'（有相关表述）/
     'ok'（无相关表述）/ 'unknown'（无法读取贡献指南）。
+
+    v3.1 改进：避免把 AI 项目的正常 LLM 提及误判为限制声明。
+    只有命中禁止性短语才标 blocked；普通提及（如"我们使用 AI 辅助测试"）标 mention。
     """
     for path in CONTRIBUTING_PATHS:
         content = gh.fetch_file_content(owner, repo, path)
         if content is None:
             continue
-        hits = [kw for kw in AI_POLICY_KEYWORDS if kw in content.lower()]
-        if hits:
-            if any(kw in content.lower() for kw in
-                   ("do not use ai", "no ai", "prohibit ai", "ai-generated contributions",
-                    "ai generated contributions", "not accept ai")):
-                return "blocked", f"命中 {path}: {hits[:3]}（疑似明确禁止）"
-            return "mention", f"命中 {path}: {hits[:3]}（有 AI 相关表述，需人工确认口径）"
+        content_lower = content.lower()
+
+        # 先检查明确禁止性短语
+        blocked_hits = [kw for kw in AI_POLICY_BLOCKED_PHRASES if kw in content_lower]
+        if blocked_hits:
+            return "blocked", f"命中 {path}: {blocked_hits[:3]}（明确禁止 AI 生成代码）"
+
+        # 再检查提及性关键词（需人工确认口径）
+        mention_hits = [kw for kw in AI_POLICY_MENTION_KEYWORDS if kw in content_lower]
+        if mention_hits:
+            return "mention", f"命中 {path}: {mention_hits[:3]}（有 AI 相关表述，需人工确认口径）"
+
         return "ok", f"{path} 无 AI 限制表述"
     return "unknown", "未找到贡献指南，无法判断"
 
 
 def check_repo(owner, repo):
-    """体检单个仓库，返回 (输出行列表, score, total)。任何单项失败不中断。"""
+    """体检单个仓库，返回 (输出行列表, score, total, extra)。任何单项失败不中断。"""
     out, score, total = [], 0, 12
 
     info = gh.get(f"/repos/{owner}/{repo}")
     if "_error" in info:
-        return [f"仓库查询失败: {info['_error']}"], 0, total
+        return [f"仓库查询失败: {info['_error']}"], 0, total, {}
 
     # 搜索类指标：逐项拉取，逐项降级
     since = gh_days_ago_since(30)
@@ -143,7 +155,7 @@ def gh_days_ago_since(days):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="GitHub 仓库健康度体检（v3）")
+    ap = argparse.ArgumentParser(description="GitHub 仓库健康度体检（v3.1）")
     ap.add_argument("repos", nargs="+", help="owner/repo 或 GitHub URL，可多个")
     ap.add_argument("--json", action="store_true", help="输出 JSON（供自动化复用）")
     args = ap.parse_args()
