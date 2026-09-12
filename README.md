@@ -93,7 +93,8 @@ python pr_tracker.py <owner/repo> <pr_number>                                # �
 | 新手甜蜜区模式 | `--beginner`：100~1000 star，竞争小、维护者回复快 |
 | 12 项健康体检 | 提交活跃度、Issue 关闭率、PR 合并速度、Release 频率、贡献指南、License 等 |
 | AI 政策扫描（去误报） | 读取 `CONTRIBUTING.md` 判定 `blocked / mention / ok / unknown`；"llm" 单独命中不触发，必须与禁止性动词组合才算限制声明 |
-| Issue 启发式打分 | 0~100 可解释分：清晰度 30 + 标签 15 + 评论 15 + 新鲜度 20 + milestone 20 |
+| 双维度启发式打分 | Contribution Score = Issue Quality（清晰度/标签/新鲜度/milestone/讨论）× 0.5 + Feasibility（撞车/修改范围/新手友好/技术栈匹配）× 0.5，可解释、权重透明 |
+| 技术栈匹配度 | `--stack python,langchain,fastapi` 输出 Stack Match 百分比 + 逐项 ✓/—，匹配仓库主语言和 issue 正文关键词 |
 | 标签零命中 fallback | 标签搜索无结果时自动拉取全量 open issue，避免漏检不打标签的 roadmap/feature issue |
 | 撞车检测 | 自动拉取全部 open PR，剔除已被 `fixes #N` 引用的 Issue |
 | 认领方式检测 | `claim_issue.py` 自动检测 claim bot（`/claim`）或评论认领，检查 assignee/认领评论/PR 引用冲突 |
@@ -152,23 +153,26 @@ AI 政策: mention — 命中 CONTRIBUTING.md: ['ai generated']（有 AI 相关�
 </details>
 
 <details>
-<summary><b>③ Issue 筛选 + 打分 + Collision Risk + Why this issue?</b></summary>
+<summary><b>③ Issue 筛选 + 双维度打分 + Stack Match + Why this issue?</b></summary>
 
 ```text
-$ python find_issues.py helsome/folio --limit 3
+$ python find_issues.py helsome/folio --stack python,langchain,fastapi --limit 3
 [信息] 标签搜索零命中，自动 fallback 到全量 open issue 列表...
-仓库: helsome/folio  条件: open / 无assignee / 近60天活跃 / 标签 ['good first issue', 'help wanted']
+仓库: helsome/folio  条件: open / 无assignee / 近60天活跃 / 标签 ['good first issue', 'help wanted'] | 技术栈: python,langchain,fastapi
 碰撞检测: 扫描 12 个 open PR 引用，隐藏 2 个高碰撞风险 Issue
 
-[ 82/100] #25  [Finance Data] Add provider routing, rate-limit handling, cache, and failover
+[ 84/100] #25  [Finance Data] Add provider routing, rate-limit handling, cache, and failover
    标签: - | 2天前活跃 | 评论 0 | milestone: Finance Data v0.5 | https://github.com/helsome/folio/issues/25
-   打分: clarity28/30, label0/15, comments6/15, freshness20/20, milestone15/20
-   Collision Risk: 🟢 LOW — No open PR, no assignee, low comment activity
+   Issue Quality:         86/100  (clarity28/30, label0/15, freshness20/25, milestone15/20, discussion5/10)
+   Feasibility:           82/100  (collision30/30, scope17/25, beginner10/25, stack15/20)
+   Stack Match:           ████████████████░░░░  75%  (python ✓ | langchain ✓ | fastapi —)
+   Collision Risk:        🟢 LOW — No open PR, no assignee, low comment activity
    🎯 Why this issue?
      ✓ Clear description with reproduction steps
      ✓ On project roadmap (milestone: Finance Data v0.5)
      ✓ Recently active (2 days ago) — maintainer is engaged
      ✓ No active collision — no open PR, no assignee
+     ✓ Strong stack match (75%): python, langchain
      ⚠ No beginner-friendly label (may be a roadmap issue requiring more context)
      ⚠ No comments yet — be the first to engage
 
@@ -278,7 +282,7 @@ Contribution Score (Top 3) .............................. 3 ⭐
 | --- | --- | --- |
 | `discover_repos.py` | 按方向/语言/规模发现候选项目 | `--topic` `--language` `--beginner` `--stars` `--max-stars` `--pushed-days` `--json` |
 | `repo_health.py` | 12 项健康度体检 + AI 政策扫描 | 多仓库批量、`--json`（单项缺失自动降级，不中断） |
-| `find_issues.py` | Issue 筛选、打分、Collision Risk 分级、Why this issue?、标签零命中 fallback | `--include-bugs` `--beginner-only` `--labels` `--min-score` `--days` `--no-fallback` `--show-collision` `--json` |
+| `find_issues.py` | Issue 筛选、双维度打分（Quality + Feasibility）、Collision Risk、Stack Match、Why this issue? | `--include-bugs` `--beginner-only` `--labels` `--min-score` `--days` `--no-fallback` `--show-collision` `--stack` `--json` |
 | `claim_issue.py` | 认领方式检测 + 认领冲突检查 | 接受 `owner/repo N` 或 issue URL、`--json` |
 | `pr_tracker.py` | PR 生命周期跟踪 + 下一步动作判断 | 接受 `owner/repo N` 或 PR URL、`--json` |
 

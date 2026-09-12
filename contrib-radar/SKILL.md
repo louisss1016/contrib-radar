@@ -19,6 +19,7 @@ v3 更新：脚本层基于共享封装 `scripts/github_api.py`（统一限速/�
 v3.1 更新：新增 Route C 持续监控（每日定时任务）与 Route C+（自动实现 + 人工确认提交）。
 v3.2 更新：基于实战反馈的全链路增强——`find_issues.py` 标签零命中自动 fallback 全量 issue + milestone 打分维度；`repo_health.py` AI 政策去误报；`contribution-workflow.md` 补认领检测/baseline/rebase/可复现测试报告/Windows 坑；SKILL.md 降级链加 MCP/OAuth；Route C+ 扩展为完整自动贡献流程（状态持久化 + 质量门控 + PR 生命周期跟踪）。
 v3.3 更新：决策可解释性升级——`find_issues.py` 新增 Collision Risk 分级（LOW/MEDIUM/HIGH + 原因 + 建议）与 Why this issue? 决策理由清单（✓/⚠）；README 新增 Case Study 漏斗图（From 1,000 Issues → 3 Contributions）与 Core vs Agent Workflow 能力边界表；项目定位收紧为"Find the right open-source contribution before you write code"。
+v3.4 更新：打分模型升级——Contribution Score 拆分为 Issue Quality（清晰度30+标签15+新鲜度25+milestone20+讨论10）和 Contribution Feasibility（撞车30+修改范围25+新手友好25+技术栈匹配20）双维度，最终分 = Quality×0.5 + Feasibility×0.5；新增 `--stack` 技术栈匹配度（Stack Match % + 逐项 ✓/—），匹配仓库主语言和 issue 正文关键词。
 
 ## 触发条件
 
@@ -87,8 +88,8 @@ v3.3 更新：决策可解释性升级——`find_issues.py` 新增 Collision Ri
 详细维度、筛选条件与输出模板见 `references/opportunity-analysis.md`，严格执行：
 
 1. **项目理解**：读 README.md / CONTRIBUTING.md / CHANGELOG.md / 主入口文件（不存在则跳过）。克隆或在线阅读均可。输出：目录结构（depth=3）+ 核心模块标注 + 2~3 句话概括项目核心机制。
-2. **Issue 列表筛选**：先运行 `scripts/find_issues.py <owner/repo>` 拿到机筛候选
-   （默认新手友好标签 / open / 近 60 天活跃 / 无 assignee / **Collision Risk 分级**（LOW/MEDIUM/HIGH，HIGH 默认隐藏，加 `--show-collision` 查看），并附 0~100 启发式打分 + **Why this issue? 决策理由清单**（✓/⚠）；
+2. **Issue 列表筛选**：先运行 `scripts/find_issues.py <owner/repo> [--stack python,langchain]` 拿到机筛候选
+   （默认新手友好标签 / open / 近 60 天活跃 / 无 assignee / **双维度打分**：Issue Quality + Contribution Feasibility → Contribution Score / **Collision Risk 分级**（LOW/MEDIUM/HIGH，HIGH 默认隐藏，加 `--show-collision` 查看）/ **Stack Match**（`--stack` 参数，匹配仓库主语言和 issue 正文）/ **Why this issue? 决策理由清单**（✓/⚠）；
    **标签零命中时自动 fallback 到全量 open issue 列表**，避免漏检不打标签的 roadmap issue）。
    再逐条阅读正文与评论做语义判断（评论中是否有人声称认领、描述是否清晰、改动是否 1~3 个文件可控）。
    按模板表格输出。需要更大候选面时加 `--include-bugs`。
