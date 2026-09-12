@@ -1,6 +1,6 @@
 ---
 name: contrib-radar
-description: 开源贡献侦察兵。自动发现适合贡献的开源项目（按技术栈、活跃度、友好度筛选），并深入分析项目中可提交 PR 或 Issue 的具体切入点（Issue 筛选 + 架构缺陷分析 + Top 3 贡献建议）。当用户想找开源项目做贡献、挖掘 PR/Issue 机会、分析某个 GitHub 仓库的贡献切入点、寻找 good first issue、准备开源贡献面试素材时使用。触发词：找开源项目、开源贡献、PR 切入点、Issue 挖掘、good first issue、给 XX 项目提 PR、开源项目分析、contribute to open source。若用户提供具体仓库地址，跳过项目发现，直接定位该项目的 PR 与 Issue 机会。
+description: 开源贡献侦察兵。核心定位：Find the right open-source contribution before you write code — 在写代码之前，用可解释的打分和碰撞检测帮你锁定真正值得投入的贡献机会。自动发现适合贡献的开源项目（按技术栈、活跃度、友好度筛选），深入分析项目中可提交 PR 的具体切入点（Issue 筛选 + 启发式打分 + Collision Risk 分级 + Why this issue 决策理由 + 架构缺陷分析 + Top 3 贡献建议），并支持持续监控与自动贡献模式。当用户想找开源项目做贡献、挖掘 PR/Issue 机会、分析某个 GitHub 仓库的贡献切入点、寻找 good first issue、准备开源贡献面试素材、或要求每天自动扫描贡献机会时使用。触发词：找开源项目、开源贡献、PR 切入点、Issue 挖掘、good first issue、给 XX 项目提 PR、开源项目分析、contribute to open source。若用户提供具体仓库地址，跳过项目发现，直接定位该项目的 PR 与 Issue 机会。
 agent_created: true
 ---
 
@@ -8,7 +8,9 @@ agent_created: true
 
 ## Overview
 
-帮助用户完成开源贡献的完整链路：**找到合适的项目 → 找到合适的切入点（PR/Issue 方向）→ 实现 → 提交 → 维护**。
+**核心定位：Find the right open-source contribution before you write code.**
+
+帮助用户在写代码之前，用可解释的打分和碰撞检测锁定真正值得投入的贡献机会：**找到合适的项目 → 找到合适的切入点（PR/Issue 方向）→ 决策支持 → 实现 → 提交 → 维护**。
 内容源自《AI Agent 开源项目贡献完整流程手册》，并融合了 GitHub 官方指南与社区最佳实践（项目健康度打分、聚合站点、维护者沟通规范）。
 
 核心原则：**先沟通再动手、小步快跑、一切结论定位到具体文件与函数，禁止泛泛而谈、禁止编造数据。**
@@ -16,6 +18,7 @@ agent_created: true
 v3 更新：脚本层基于共享封装 `scripts/github_api.py`（统一限速/降级）；`find_issues.py` 新增启发式打分与撞车检测（剔除已被 open PR 引用的 Issue）；`repo_health.py` 新增 AI 生成代码政策检查；`discover_repos.py` 新增新手甜蜜区模式（--beginner）与 --json 导出。
 v3.1 更新：新增 Route C 持续监控（每日定时任务）与 Route C+（自动实现 + 人工确认提交）。
 v3.2 更新：基于实战反馈的全链路增强——`find_issues.py` 标签零命中自动 fallback 全量 issue + milestone 打分维度；`repo_health.py` AI 政策去误报；`contribution-workflow.md` 补认领检测/baseline/rebase/可复现测试报告/Windows 坑；SKILL.md 降级链加 MCP/OAuth；Route C+ 扩展为完整自动贡献流程（状态持久化 + 质量门控 + PR 生命周期跟踪）。
+v3.3 更新：决策可解释性升级——`find_issues.py` 新增 Collision Risk 分级（LOW/MEDIUM/HIGH + 原因 + 建议）与 Why this issue? 决策理由清单（✓/⚠）；README 新增 Case Study 漏斗图（From 1,000 Issues → 3 Contributions）与 Core vs Agent Workflow 能力边界表；项目定位收紧为"Find the right open-source contribution before you write code"。
 
 ## 触发条件
 
@@ -85,7 +88,7 @@ v3.2 更新：基于实战反馈的全链路增强——`find_issues.py` 标签�
 
 1. **项目理解**：读 README.md / CONTRIBUTING.md / CHANGELOG.md / 主入口文件（不存在则跳过）。克隆或在线阅读均可。输出：目录结构（depth=3）+ 核心模块标注 + 2~3 句话概括项目核心机制。
 2. **Issue 列表筛选**：先运行 `scripts/find_issues.py <owner/repo>` 拿到机筛候选
-   （默认新手友好标签 / open / 近 60 天活跃 / 无 assignee / 已剔除被 open PR 引用的撞车条目，并附 0~100 启发式打分；
+   （默认新手友好标签 / open / 近 60 天活跃 / 无 assignee / **Collision Risk 分级**（LOW/MEDIUM/HIGH，HIGH 默认隐藏，加 `--show-collision` 查看），并附 0~100 启发式打分 + **Why this issue? 决策理由清单**（✓/⚠）；
    **标签零命中时自动 fallback 到全量 open issue 列表**，避免漏检不打标签的 roadmap issue）。
    再逐条阅读正文与评论做语义判断（评论中是否有人声称认领、描述是否清晰、改动是否 1~3 个文件可控）。
    按模板表格输出。需要更大候选面时加 `--include-bugs`。

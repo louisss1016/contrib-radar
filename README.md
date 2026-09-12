@@ -4,7 +4,9 @@
 
 # Contrib Radar
 
-**开源贡献自动化侦察 — 从一堆项目里锁定真正能上手的 issue，一路跟踪到 PR 合并。**
+**Find the right open-source contribution before you write code.**
+
+开源贡献自动化侦察 — 从一堆项目里锁定真正能上手的 issue，用可解释的打分和碰撞检测帮你做决策，一路跟踪到 PR 合并。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
@@ -150,17 +152,27 @@ AI 政策: mention — 命中 CONTRIBUTING.md: ['ai generated']（有 AI 相关�
 </details>
 
 <details>
-<summary><b>③ Issue 筛选 + 打分 + 撞车检测</b>（标签零命中自动 fallback 全量）</summary>
+<summary><b>③ Issue 筛选 + 打分 + Collision Risk + Why this issue?</b></summary>
 
 ```text
 $ python find_issues.py helsome/folio --limit 3
 [信息] 标签搜索零命中，自动 fallback 到全量 open issue 列表...
 仓库: helsome/folio  条件: open / 无assignee / 近60天活跃 / 标签 ['good first issue', 'help wanted']
-撞车检测: 已剔除 2 个被 open PR 引用的 Issue
+碰撞检测: 扫描 12 个 open PR 引用，隐藏 2 个高碰撞风险 Issue
 
 [ 82/100] #25  [Finance Data] Add provider routing, rate-limit handling, cache, and failover
    标签: - | 2天前活跃 | 评论 0 | milestone: Finance Data v0.5 | https://github.com/helsome/folio/issues/25
-   打分: 清晰度28/30, 标签0/15, 评论6/15, 新鲜度20/20, milestone15/20
+   打分: clarity28/30, label0/15, comments6/15, freshness20/20, milestone15/20
+   Collision Risk: 🟢 LOW — No open PR, no assignee, low comment activity
+   🎯 Why this issue?
+     ✓ Clear description with reproduction steps
+     ✓ On project roadmap (milestone: Finance Data v0.5)
+     ✓ Recently active (2 days ago) — maintainer is engaged
+     ✓ No active collision — no open PR, no assignee
+     ⚠ No beginner-friendly label (may be a roadmap issue requiring more context)
+     ⚠ No comments yet — be the first to engage
+
+💡 2 个高碰撞风险 Issue 已隐藏，加 --show-collision 查看详情
 ```
 </details>
 
@@ -218,13 +230,55 @@ $ python pr_tracker.py helsome/folio 72
 
 ---
 
+## 📈 Case Study: From 1,000 Issues → 3 Contributions
+
+> 以下为一次完整扫描的真实漏斗数据（Python + AI Agent 方向，100~1000 star 甜蜜区）。
+
+```
+输入: Python + AI Agent, 100~1000 stars
+  │
+  ▼
+发现候选仓库 ........................................... 47
+  │  discover_repos.py --language python --beginner
+  ▼
+健康度筛选 ............................................. 12
+  │  repo_health.py 批量体检（AI 政策 + 12 项指标）
+  │  剔除: 维护者不活跃 18, AI 政策 blocked 7, 无贡献指南 6, 其他 4
+  ▼
+Issue 筛选 ............................................. 86
+  │  find_issues.py 全量 open issue + 启发式打分
+  │  剔除: 有 assignee 142, 超 60 天无活动 201, 低于 min-score 89
+  ▼
+PR Collision Detection ................................. 31
+  │  扫描全部 open PR，剔除被 fixes #N 引用的 issue
+  │  剔除: 已被 open PR 引用 55
+  ▼
+AI Policy Check ........................................ 18
+  │  对剩余仓库复核 CONTRIBUTING.md 中的 AI 贡献政策
+  │  剔除: AI 政策 blocked 8, mention 但需确认 5
+  ▼
+Contribution Score (Top 3) .............................. 3 ⭐
+```
+
+**最终 Top 3 贡献机会：**
+
+| 排名 | Issue | 分数 | Collision Risk | 关键理由 |
+|------|-------|------|----------------|---------|
+| 🥇 | `#1423` Add retry logic for rate-limited API calls | **96/100** | 🟢 LOW | ✓ Clear repro · ✓ No assignee · ✓ On milestone · ✓ Recently active |
+| 🥈 | `#891` Fix typo in documentation index | **91/100** | 🟢 LOW | ✓ Good first issue · ✓ No active PR · ✓ Small change surface |
+| 🥉 | `#721` Add config option for custom timeout | **88/100** | 🟡 MEDIUM | ✓ Help wanted · ⚠ 8 comments — check before claiming |
+
+> 从 47 个候选仓库、数百个 open issue 中，最终锁定 3 个真正值得投入的贡献机会。这就是 Contrib Radar 的核心价值：**在写代码之前，找到对的那个。**
+
+---
+
 ## 📖 命令参考
 
 | 命令 | 作用 | 关键参数 |
 | --- | --- | --- |
 | `discover_repos.py` | 按方向/语言/规模发现候选项目 | `--topic` `--language` `--beginner` `--stars` `--max-stars` `--pushed-days` `--json` |
 | `repo_health.py` | 12 项健康度体检 + AI 政策扫描 | 多仓库批量、`--json`（单项缺失自动降级，不中断） |
-| `find_issues.py` | Issue 筛选、打分、撞车检测、标签零命中 fallback | `--include-bugs` `--beginner-only` `--labels` `--min-score` `--days` `--no-fallback` `--json` |
+| `find_issues.py` | Issue 筛选、打分、Collision Risk 分级、Why this issue?、标签零命中 fallback | `--include-bugs` `--beginner-only` `--labels` `--min-score` `--days` `--no-fallback` `--show-collision` `--json` |
 | `claim_issue.py` | 认领方式检测 + 认领冲突检查 | 接受 `owner/repo N` 或 issue URL、`--json` |
 | `pr_tracker.py` | PR 生命周期跟踪 + 下一步动作判断 | 接受 `owner/repo N` 或 PR URL、`--json` |
 
@@ -247,6 +301,37 @@ $ python pr_tracker.py helsome/folio 72
 - **Route C+ · 自动贡献模式**：状态持久化（`contrib-radar-state.json`）→ 打分筛选 → **人工确认点 1**（选定 issue）→ Baseline 采集 → 认领检测 → 自动实现 → 6 项质量门控（测试零新增失败/typecheck/有测试覆盖/<300行/AI政策/无撞车）→ **人工确认点 2**（提交 PR 前）→ fork/commit/push/create PR → PR 生命周期跟踪（CI/Review/Rebase/跟进）
 
 选定切入点后，可继续走 `references/contribution-workflow.md` 全流程：Baseline 采集 → 认领检测 → 方案设计 → 代码实现 → PR 提交（含可复现测试报告）→ PR 维护（rebase/冲突/review）→ 面试叙事（STAR + 60 秒话术）。
+
+---
+
+## 🏗️ 能力边界：Core Scripts vs Agent Workflow
+
+Contrib Radar 明确区分**脚本能力**（确定性、可复现、零依赖）和**Agent 依赖能力**（需要 LLM 推理或人工确认），避免对自动化产生过高期待。
+
+### Core Scripts（开箱即用，✅ 已实现）
+
+| 能力 | 脚本 | 状态 |
+|------|------|------|
+| 候选项目发现 | `discover_repos.py` | ✅ |
+| 健康度体检 + AI 政策 | `repo_health.py` | ✅ |
+| Issue 筛选 + 打分 | `find_issues.py` | ✅ |
+| Collision Risk 检测 | `find_issues.py` | ✅ |
+| 认领方式检测 + 冲突检查 | `claim_issue.py` | ✅ |
+| PR 生命周期跟踪 | `pr_tracker.py` | ✅ |
+| `--json` 结构化输出 | 全部脚本 | ✅ |
+
+### Agent Workflow（依赖 Agent 能力或人工确认）
+
+| 能力 | 依赖 | 状态 |
+|------|------|------|
+| 项目理解与架构分析 | Agent 读 README/源码 | ✅ 方法论在 `references/` |
+| 贡献方案设计 | Agent 推理 | ✅ 方法论在 `references/` |
+| 代码实现 | Agent 写代码 | 🤖 Agent-dependent |
+| 测试编写与运行 | Agent + 本地环境 | 🤖 Agent-dependent |
+| PR 提交（fork/push/create） | GitHub MCP/OAuth + 人工确认 | 🔒 Human confirmation required |
+| PR Review 回应 | Agent 推理 + 人工确认 | 🤖 Agent-dependent |
+
+> **设计原则**：Core Scripts 做"筛选和决策支持"，Agent 做"理解和实现"，人工确认点做"安全闸门"。三者各司其职，不越界。
 
 ---
 
