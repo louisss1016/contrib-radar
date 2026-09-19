@@ -20,6 +20,8 @@ v3.1 更新：新增 Route C 持续监控（每日定时任务）与 Route C+（
 v3.2 更新：基于实战反馈的全链路增强——`find_issues.py` 标签零命中自动 fallback 全量 issue + milestone 打分维度；`repo_health.py` AI 政策去误报；`contribution-workflow.md` 补认领检测/baseline/rebase/可复现测试报告/Windows 坑；SKILL.md 降级链加 MCP/OAuth；Route C+ 扩展为完整自动贡献流程（状态持久化 + 质量门控 + PR 生命周期跟踪）。
 v3.3 更新：决策可解释性升级——`find_issues.py` 新增 Collision Risk 分级（LOW/MEDIUM/HIGH + 原因 + 建议）与 Why this issue? 决策理由清单（✓/⚠）；README 新增 Case Study 漏斗图（From 1,000 Issues → 3 Contributions）与 Core vs Agent Workflow 能力边界表；项目定位收紧为"Find the right open-source contribution before you write code"。
 v3.4 更新：打分模型升级——Contribution Score 拆分为 Issue Quality（清晰度30+标签15+新鲜度25+milestone20+讨论10）和 Contribution Feasibility（撞车30+修改范围25+新手友好25+技术栈匹配20）双维度，最终分 = Quality×0.5 + Feasibility×0.5；新增 `--stack` 技术栈匹配度（Stack Match % + 逐项 ✓/—），匹配仓库主语言和 issue 正文关键词。
+v3.5 更新：新增 `references/api-pr-submission.md`——git clone/push 被代理或防火墙阻断时，改用纯 GitHub REST API（fork → Git Data API → PR）完成提交；Route C+ 提交步骤挂接该降级通道。
+v3.6 更新：Route C+ 全面自动化——取消默认流程中的两个人工确认点，扫描、筛选、实现、提交、维护全程无人干预；6 项质量门控 + 冷却期 + 黑名单成为唯一安全防线（不过不提交）；人工确认降级为可选保守模式（用户在 Query 中显式开启才生效）。
 
 ## 触发条件
 
@@ -121,11 +123,11 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
 4. **限速注意**：未认证 Search API 10/min——跨仓库扫描控制搜索次数（每语言 1 次 + 撞车 1 次）；
    设置 `GITHUB_TOKEN`（search 30/min）可放开。脚本见 `scripts/`。
 
-### Route C+：自动贡献模式（发现 → 实现 → 提交 → 维护）
+### Route C+：全自动贡献模式（发现 → 实现 → 提交 → 维护）
 
 当用户要求"发现值得做的 Issue 就自动实现并提交 PR"、或定时任务配置为自动贡献模式时启用。
 
-**核心设计：状态持久化 + 质量门控 + 两个人工确认点。**
+**核心设计：状态持久化 + 质量门控 + 全自动执行（全程无人干预，人工确认为可选保守模式）。**
 
 #### 0. 状态持久化（必须）
 
@@ -162,14 +164,14 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
 - 该仓库不在 `blacklisted_repos` 和 `cooldown` 中
 - 该仓库当前没有用户的活跃 PR（同一仓库同时最多 1 个活跃 PR）
 
-#### 2. 人工确认点 1：选定 issue 后、开始实现前
+#### 2. 选点（自动，可审计）
 
-向用户展示：
+自动选定打分最高、预估改动最小、Collision Risk 最低的 1 个 issue，把选型依据写入每日日报供事后审计：
 - 选定的 issue（标题、链接、打分、预估工作量）
 - 简要实现方案（2~3 句话）
 - 风险点
 
-**用户确认后才开始实现。** 用户拒绝则标记该 issue 为 `skipped_by_user`，继续下一个候选。
+**默认直接开始实现，不停下等待确认。** 唯一例外：用户在 Query 中显式开启人工确认（保守模式）时，先展示上述信息、等用户确认后再实现；用户拒绝则标记该 issue 为 `skipped_by_user`，继续下一个候选。
 
 #### 3. 自动实现（按 `references/contribution-workflow.md`）
 
@@ -191,20 +193,22 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
 
 任何一项不通过 → 记录失败原因到状态文件 → **不提交** → 下次运行时重试（最多 3 次）或跳过。
 
-#### 5. 人工确认点 2：实现完成、测试通过后、提交 PR 前
+#### 5. 提交（自动，材料可审计）
 
-向用户展示完整的"待提交材料"：
+质量门控全部通过后**直接执行提交**，完整的「待提交材料」写入每日日报供事后审计：
 - 改动文件清单 + diff 摘要
 - 可复现测试报告（环境/命令/pass-fail 数量/baseline 对比）
 - PR 描述草稿（Problem/Solution/Changes/Testing/Notes）
 - Commit 拆分方案
 
-**用户确认后才执行提交。** 提交步骤：
+提交步骤：
 1. fork 目标仓库（如未 fork）
 2. 创建分支（`feat/<issue-number>-<short-desc>`）
 3. Conventional Commits 拆分 2~4 个 commit
 4. push 到 fork
 5. 创建 Pull Request（标题/描述用准备好的材料，关联 `Closes #N`）
+
+> **可选保守模式**：用户在 Query 中显式开启人工确认时，提交前先向用户展示上述材料，确认后才执行。
 
 > **git 不可用时的降级通道**：当 `git clone` / `git push` 被代理、防火墙或大仓库传输阻断（`RPC failed` / `IncompleteRead`），但 REST API 小响应仍可用时，跳过本地 git，改用 **Git Data API** 直接构造 commit 并开 PR（fork → blob → tree → commit → branch ref → PR）。完整流程与脚本见 `references/api-pr-submission.md`。
 
@@ -234,8 +238,8 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
 
 - 仓库 AI 政策明确禁止 AI 生成代码（blocked）时不得生成提交材料
 - 提交前必须复核无撞车（该 issue 无新 open PR 引用、无新 assignee）
-- 质量门控不通过不得提交
-- 用户未确认不得执行任何 GitHub 写操作（fork / push / create PR / 评论）
+- 质量门控不通过不得提交——全自动模式下这是唯一安全防线，任何一项不过就跳过该 issue，不带病上线
+- 默认（全自动）模式下，6 项质量门控全部通过即允许执行 GitHub 写操作（fork / push / create PR / 评论）；保守模式下，写操作前还必须获得用户确认
 
 ## 后续阶段（可选，用户确认后执行）
 

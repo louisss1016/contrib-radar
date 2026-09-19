@@ -6,7 +6,7 @@
 
 **Find the right open-source contribution before you write code.**
 
-在写代码之前，锁定真正值得投入的开源贡献机会。用可解释的打分与碰撞检测，从一堆候选项目里筛出「低门槛 + 有人理」的 Issue，一路跟踪到 PR 合并。
+全自动开源贡献流水线：Agent 每天定时发现高质量项目、筛选可认领 Issue、自动实现并通过质量门控后提交 PR、持续跟踪到合并——**全程无人干预**，你的 GitHub 贡献每天自动产出。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
@@ -31,13 +31,20 @@
 | **怕白干** | 提交前才发现已有人认领，或项目禁止 AI 代码 | 撞车检测剔除被 open PR 引用的 Issue + `claim_issue.py` 冲突检查 + AI 政策扫描（去误报） |
 | **PR 石沉大海** | 提交后没人跟进、CI 挂了、上游更新没 rebase | `pr_tracker.py` 跟踪 CI / Review / Rebase，自动判断下一步动作 |
 
-**它适合**：想开始做开源贡献的开发者、把开源贡献当面试素材的求职者、想系统化「找项目 → 找切入点 → 实现 → 提交 → 维护」全流程的人、以及想配合定时任务每天自动挖掘贡献机会的人。
+四个卡点串起来，就是一条每天自动运行的贡献流水线：
+
+```
+每日定时触发 → 发现项目 → 健康体检 → 筛选 Issue → 撞车/AI 政策检查 → 自动实现 → 质量门控 → 提交 PR → 跟踪维护 → 日报
+ └────────────────────────── 全程无人干预，质量门控兜底 ──────────────────────────┘
+```
+
+**它适合**：想让 GitHub 每天都有真实开源贡献、但没有精力逐个翻 Issue 的开发者；把开源贡献当面试素材、需要持续产出的人；想系统化「找项目 → 找切入点 → 实现 → 提交 → 维护」全流程的人。
 
 **它不适合**（边界声明）：
 
-- 想要「完全无人值守自动提 PR 并躺平」的场景——本工具在**选定 issue 后**和**提交 PR 前**设了两个人工确认点，其余步骤可全自动
 - 只想在某一个固定仓库长期深耕——直接用 `find_issues.py` + `claim_issue.py` 就够了
 - 需要商业级私有数据或 SLA 保障的团队场景——本项目是零依赖的个人开源工具
+- 对提交内容零容忍、不希望任何 AI 生成代码以你名义发出的场景——请开启保守模式（人工确认，见 Route C+）或不要启用 Route C+
 
 ---
 
@@ -279,7 +286,7 @@ Contribution Score (Top 3) .............................. 3 ⭐
 - **Route A · 从零开始**：收集画像（技术栈先确认 **Python / TypeScript**）→ 发现候选 → 批量健康体检 → 输出候选表 → 用户选定
 - **Route B · 已有目标仓库**：项目理解（README/CONTRIBUTING/主入口）→ 机筛 Issue + 人工复核 → AI 政策前置检查 → 7 维架构缺陷分析（定位到具体文件/函数）→ Top 3 贡献建议
 - **Route C · 持续监控**：配合定时任务每日执行——跨仓库扫描新出现的 good first issue / help wanted（Python / TypeScript，近 24~48h 更新）→ 撞车复核 → 与上次日报对比 → 输出差异日报 `daily-issue-scan-<date>.md`
-- **Route C+ · 自动贡献模式**：状态持久化（`contrib-radar-state.json`）→ 打分筛选 → **人工确认点 1**（选定 issue）→ Baseline 采集 → 认领检测 → 自动实现 → 6 项质量门控（测试零新增失败/typecheck/有测试覆盖/<300行/AI政策/无撞车）→ **人工确认点 2**（提交 PR 前）→ fork/commit/push/create PR → PR 生命周期跟踪（CI/Review/Rebase/跟进）
+- **Route C+ · 全自动贡献模式**：状态持久化（`contrib-radar-state.json`）→ 打分筛选 → Baseline 采集 → 认领检测 → 自动实现 → 6 项质量门控（测试零新增失败/typecheck/有测试覆盖/<300行/AI政策/无撞车）→ 自动 fork/commit/push/create PR → PR 生命周期跟踪（CI/Review/Rebase/跟进），**全程无人干预**
 
 选定切入点后，可继续走 `references/contribution-workflow.md` 全流程：Baseline 采集 → 认领检测 → 方案设计 → 代码实现 → PR 提交（含可复现测试报告）→ PR 维护（rebase/冲突/review）→ 面试叙事（STAR + 60 秒话术）。
 
@@ -309,18 +316,18 @@ Contrib Radar 明确区分**脚本能力**（确定性、可复现、零依赖�
 | 贡献方案设计 | Agent 推理 | ✅ 方法论在 `references/` |
 | 代码实现 | Agent 写代码 | 🤖 Agent-dependent |
 | 测试编写与运行 | Agent + 本地环境 | 🤖 Agent-dependent |
-| PR 提交（fork/push/create） | GitHub MCP/OAuth + 人工确认 | 🔒 Human confirmation required |
-| PR Review 回应 | Agent 推理 + 人工确认 | 🤖 Agent-dependent |
+| PR 提交（fork/push/create） | GitHub MCP/OAuth 或 REST API | ✅ 全自动执行（可选保守模式下需人工确认） |
+| PR Review 回应 | Agent 推理 | 🤖 Agent-dependent |
 
-> **设计原则**：Core Scripts 做「筛选和决策支持」，Agent 做「理解和实现」，人工确认点做「安全闸门」。三者各司其职，不越界。
+> **设计原则**：Core Scripts 做「筛选和决策支持」，Agent 做「理解和实现」，质量门控做「安全闸门」。三者各司其职，不越界。
 
 ---
 
-## ⏰ 定时任务自动化（Route C+）
+## ⏰ 定时任务自动化（Route C+ 全自动）
 
-> 与上方「快速开始」的**手动对话触发**不同，本章节的 Query 模板专为**定时任务自动触发**设计——包含完整的状态持久化、质量门控和人工确认点，适合每天自动运行。两种场景互补，不冲突。
+> 与上方「快速开始」的**手动对话触发**不同，本章节的 Query 模板专为**定时任务自动触发**设计——状态持久化 + 质量门控 + 全自动执行，每天跑一次，无需任何人工干预。两种场景互补，不冲突。
 
-在支持 cron 的 Agent 平台（如豆包）创建每日定时任务，触发后自动执行 Route C+ 全流程：扫描项目 → 筛选 Issue → 认领 → 实现 → 质量门控 → 人工确认 → 提交 PR → 跟踪 PR 生命周期。
+在支持 cron 的 Agent 平台（如豆包）创建每日定时任务，触发后自动执行 Route C+ 全流程：扫描项目 → 筛选 Issue → 认领 → 实现 → 质量门控 → 提交 PR → 跟踪 PR 生命周期。**全程自动，不需要你点确认**——质量门控就是把关人：门控不过不提交，PR 被拒进冷却期，坏仓库进黑名单。
 
 ### 快速配置
 
@@ -334,7 +341,7 @@ Contrib Radar 明确区分**脚本能力**（确定性、可复现、零依赖�
 ```text
 本次请求是由「每日开源贡献自动扫描」定时任务到时触发的。
 
-请执行 contrib-radar skill 的 Route C+ 自动贡献模式。
+请执行 contrib-radar skill 的 Route C+ 全自动贡献模式。全程自动执行，不要停下来等待用户确认；所有选型理由与质量门控结果写入每日日报，供事后审计。
 
 【Skill 位置】
 <把 contrib-radar 目录的绝对路径填在这里，如 ~/.doubao/agent_mode/workspace/.skills/contrib-radar/>
@@ -356,18 +363,15 @@ Contrib Radar 明确区分**脚本能力**（确定性、可复现、零依赖�
 6. PR 跟踪：对状态文件中所有 active_prs 运行 scripts/pr_tracker.py，按 next_actions 自动处理（CI 失败则尝试修复、上游更新则 rebase、超 7 天无回应则礼貌跟进），更新状态
 
 【自动实现（每天最多 1 个新 PR）】
-- 从通过筛选的候选中选打分最高、预估改动最小的 1 个 issue（排除已在状态文件中的）
-- 【人工确认点 1】向用户展示：issue 标题/链接/打分/预估工作量/2~3 句实现方案，等待用户回复"确认"后才开始写代码
+- 自动选定 issue：取打分最高、预估改动最小、Collision Risk 最低的 1 个（排除已在状态文件中的），把选型依据（标题/链接/打分/2~3 句实现方案/风险点）写入日报
 - 实现流程：clone 仓库 → baseline 采集（先跑全量测试记录预先存在的失败）→ 认领（bot /claim 发完不要编辑）→ 按 references/contribution-workflow.md 逐步实现 → 补测试
-- 质量门控（全部通过才进入提交）：① 原有测试零新增失败 ② typecheck/lint 通过 ③ 新增代码有测试覆盖 ④ 改动 < 300 行 ⑤ AI 政策非 blocked ⑥ 提交前复核无撞车
-- 【人工确认点 2】向用户展示：改动文件清单 + 可复现测试报告（环境/命令/pass-fail 数量/baseline 对比）+ PR 描述草稿，等待用户回复"确认提交"后才执行 GitHub 写操作
-- 提交：fork（如未 fork）→ 创建 feat/<issue>-<desc> 分支 → Conventional Commits 拆分 2~4 个 commit → push → 创建 PR（标题英文、body 含可复现测试报告、Closes #N）
+- 质量门控（全部通过才允许提交，任何一项不过就跳过该 issue 并记录原因）：① 原有测试零新增失败 ② typecheck/lint 通过 ③ 新增代码有测试覆盖 ④ 改动 < 300 行 ⑤ AI 政策非 blocked ⑥ 提交前复核无撞车
+- 自动提交：门控通过后直接执行——fork（如未 fork）→ 创建 feat/<issue>-<desc> 分支 → Conventional Commits 拆分 2~4 个 commit → push → 创建 PR（标题英文、body 含可复现测试报告、Closes #N）；改动清单 + 可复现测试报告 + PR 链接写入日报
 - 更新状态文件：标记该 issue 为 pr_submitted，PR 加入 active_prs
 
 【输出要求】
-- 每日扫描日报写入 daily-issue-scan-<YYYY-MM-DD>.md：今日新增候选、筛选结果、活跃 PR 状态变化
-- 到达人工确认点时，明确提示"需要你确认后才能继续"，不要自行跳过
-- 没有合适候选或全部在冷却期时，说明原因并列出被排除的仓库及理由
+- 每日扫描日报写入 daily-issue-scan-<YYYY-MM-DD>.md：今日新增候选、筛选结果、选型依据、门控结果、活跃 PR 状态变化
+- 没有合适候选或全部在冷却期时，说明原因并列出被排除的仓库及理由，不要硬凑
 - 状态持久化到 contrib-radar-state.json，下次运行时读取
 - 所有操作在当前工作目录下执行，项目 clone 到子目录
 ```
@@ -376,12 +380,12 @@ Contrib Radar 明确区分**脚本能力**（确定性、可复现、零依赖�
 
 | 配置项 | 说明 | 建议值 |
 |--------|------|--------|
-| 执行时间 | 每天触发时间，建议你起床后、有时间处理人工确认点时 | 每天 08:00（cron `0 8 * * *`） |
+| 执行时间 | 每天触发时间 | 每天 08:00（cron `0 8 * * *`） |
 | Skill 位置 | contrib-radar 目录的绝对路径，定时任务触发时 agent 需要能找到 | 安装到全局 skills 目录后可省略此行 |
 | 技术栈 | 决定 discover_repos.py 的 `--language` 参数 | 按你的实际技术栈修改 |
 | 兴趣方向 | 决定 `--topic` 参数 | ai-agent / mcp / devtools 等 |
 | 每天最多 PR 数 | 防止贪多嚼不烂，同一仓库同时最多 1 个活跃 PR | 1 个（默认） |
-| 人工确认点 | 两个安全闸门：选定 issue 后、提交 PR 前 | 保留（不建议关闭） |
+| 人工确认模式（可选） | 保守模式：选定 issue 后、提交 PR 前停下等人确认 | 默认关闭（全自动）；首次使用建议开启观察几天 |
 
 ### 状态文件
 
@@ -401,10 +405,10 @@ Contrib Radar 明确区分**脚本能力**（确定性、可复现、零依赖�
 
 ### 注意事项
 
+- **全自动的兜底机制**：没有人工把关，质量门控就是唯一防线——6 项门控任何一项不过就不提交；每仓库同时最多 1 个活跃 PR、每天最多 1 个新 PR、PR 被拒进 7 天冷却期、AI 政策 blocked 的仓库进黑名单。多层兜底保证「自动但不失控」
 - **GitHub 认证**：提交步骤（fork / push / create PR）依赖 GitHub MCP/OAuth 连接或 `gh` CLI 已登录。认证不可用时，自动实现和材料准备不受影响，提交步骤会提示你手动执行。若 `git clone`/`push` 被代理或防火墙阻断，可改用纯 REST API 提 PR，见 `references/api-pr-submission.md`
-- **人工确认点**：query 中设了两个确认点，定时任务触发后会停下来等你回复，不会全自动提交。这是故意的安全设计
+- **保守模式（可选）**：首次使用建议在 Query 里加回两个人工确认点（选定 issue 后、提交 PR 前各确认一次），观察几天产出质量后再切回全自动
 - **Windows 环境**：如果在 Windows 上运行，注意 PowerShell 不支持 `&&`、`curl` 是别名、`git rebase --continue` 会打开 vim（用 `$env:GIT_EDITOR='true'` 跳过），这些已在 `contribution-workflow.md` 中说明
-- **冷却期**：PR 被关闭后该仓库进入 7 天冷却期，避免反复提交被拒
 
 ---
 
@@ -465,7 +469,7 @@ OK
 2. **对 GitHub API 友好**：未认证时只对 search 端点限速打点（6.2s），403 时按 `X-RateLimit-Reset` 自适应等待；配置 token 或使用 MCP/OAuth 后自动取消节流
 3. **AI 时代意识**：AI 贡献政策扫描（去误报）+ 撞车检测 + 认领冲突检查，是 2026 年开源贡献绕不开的三个新变量
 4. **可解释的确定性输出**：双维度打分权重透明（Issue Quality：清晰度 30 / 标签 15 / 新鲜度 25 / milestone 20 / 讨论 10；Feasibility：撞车 30 / 修改范围 25 / 新手友好 25 / 技术栈匹配 20），可审计、可复现
-5. **状态驱动的自动化**：Route C+ 通过 `contrib-radar-state.json` 持久化进度，配合质量门控和人工确认点，在自动化和安全性之间取得平衡
+5. **状态驱动 + 门控兜底的全自动**：Route C+ 通过 `contrib-radar-state.json` 持久化进度，6 项质量门控 + 冷却期 + 黑名单多层兜底，全自动但不失控
 6. **遵守 Agent Skills 标准**：`SKILL.md` 自包含、name 用 kebab-case、description 写明「做什么 + 何时用」，可被主流 Agent 平台自动发现
 
 ---
@@ -503,6 +507,13 @@ OK
 - 新增 `references/api-pr-submission.md`：当 `git clone`/`push` 被代理或防火墙阻断时，改用纯 GitHub REST API（fork → Git Data API → PR）完成提交
 - `SKILL.md` 在 Route C+ 提交步骤挂接该降级通道
 
+**v3.6（已交付）**：Route C+ 全面自动化——
+
+- 取消默认流程中的两个人工确认点：扫描、筛选、实现、提交、维护**全程无人干预**
+- 质量门控升级为唯一安全防线（不过不提交），所有选型依据与门控结果写入每日日报，可事后审计
+- 人工确认降级为**可选保守模式**（Query 中声明即生效），供首次观察或保守用户使用
+- README 定位同步更新为「全自动开源贡献流水线」
+
 **候选方向**（欢迎 Issue 讨论，暂未排期）：
 
 - MCP server 化：把脚本封装为 MCP 工具，供更多 Agent 平台直接调用
@@ -523,14 +534,14 @@ OK
 **会撞车吗？**
 脚本会剔除所有被 open PR 引用（`fixes #N` 等）的 Issue，`claim_issue.py` 会进一步检查 assignee 和认领评论；动手前仍建议在 Issue 下留言认领（bot `/claim` 发完不要编辑）。
 
-**自动提交安全吗？**
-Route C+ 设了**两个人工确认点**：选定 issue 后、提交 PR 前。其余步骤（扫描、认领、实现、测试、rebase、跟进评论）可全自动。6 项质量门控不通过不得提交。认证不可用时会生成待提交材料供你手动提交。
+**全自动提交，质量怎么兜底？**
+全自动不等于乱提交：6 项质量门控（原有测试零新增失败 / typecheck / 新增代码有测试覆盖 / 改动 < 300 行 / AI 政策非 blocked / 提交前复核无撞车）任何一项不过就不提交；外加每仓库同时最多 1 个活跃 PR、每天最多 1 个新 PR、PR 被拒进 7 天冷却期、AI 政策 blocked 的仓库进黑名单。所有选型理由和门控结果写入每日日报，可事后审计。首次使用想更稳，可临时开启两个人工确认点。
 
 **支持 GitLab / Gitee 吗？**
 流程方法论通用，但自带脚本仅支持 GitHub；其他平台需用 WebFetch 人工核查活跃度。
 
 **能配合定时任务每天跑吗？**
-能。在支持 cron 的 Agent 平台（如豆包）创建一个每天执行的定时任务，触发后走 Route C 扫描并输出日报；高分 Issue 自动进入 Route C+，经过两个人工确认点后自动实现并提交 PR，已提交的 PR 由 `pr_tracker.py` 每日跟踪。
+能，这正是它的主玩法。在支持 cron 的 Agent 平台（如豆包）创建一个每天执行的定时任务，触发后走 Route C 扫描并输出日报；高分 Issue 自动进入 Route C+，自动实现并提交 PR，已提交的 PR 由 `pr_tracker.py` 每日跟踪。配置模板见「定时任务自动化」章节。
 
 **标签搜索零命中怎么办？**
 `find_issues.py` 会自动 fallback 到全量 open issue 列表（最多 300 条），再用打分模型过滤。很多仓库的 roadmap/feature issue 不打标签，这个 fallback 能避免漏检高价值条目。可用 `--no-fallback` 关闭。
