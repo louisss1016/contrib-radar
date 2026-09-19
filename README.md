@@ -72,7 +72,7 @@ git clone https://github.com/louisss1016/contrib-radar.git
 
 **对话式**（推荐）：在支持 Agent Skills 的对话里直接说——
 
-> 帮我找一个 TypeScript 写的 AI Agent 方向、star 100~1000 的开源项目，顺便看看有哪些适合新手的 Issue。
+> 帮我找一个 TypeScript 写的 AI Agent 方向、star 100~1000 的开源项目。
 
 **命令行**：也可以把它当纯 CLI 工具用：
 
