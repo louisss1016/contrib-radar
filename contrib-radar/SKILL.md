@@ -206,6 +206,8 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
 4. push 到 fork
 5. 创建 Pull Request（标题/描述用准备好的材料，关联 `Closes #N`）
 
+> **git 不可用时的降级通道**：当 `git clone` / `git push` 被代理、防火墙或大仓库传输阻断（`RPC failed` / `IncompleteRead`），但 REST API 小响应仍可用时，跳过本地 git，改用 **Git Data API** 直接构造 commit 并开 PR（fork → blob → tree → commit → branch ref → PR）。完整流程与脚本见 `references/api-pr-submission.md`。
+
 #### 6. PR 生命周期跟踪（每日自动）
 
 提交后不是结束，每次定时任务运行时检查所有 `active_prs`：
@@ -265,6 +267,7 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
 - `references/contribution-workflow.md` — Baseline 采集 / 认领检测 / 方案设计 / 代码实现 / PR 提交（含可复现测试报告模板）/ PR 维护（rebase/冲突）/ 面试叙事（STAR + 60 秒话术）/ 跨平台注意事项
 - `references/example-analysis.md` — 端到端分析示例与格式自检清单（输出颗粒度校准用）
 - `references/communication-templates.md` — 英文沟通模板：Issue 认领、方向提案、PR 描述、回应 review、礼貌跟进
+- `references/api-pr-submission.md` — git 不可用时的纯 REST API 提 PR 流程（fork → Git Data API → PR），含脚本骨架与坑
 - `scripts/github_api.py` — 共享 GitHub API 封装（统一请求/限速/降级/仓库解析），三个脚本共用
 - `scripts/discover_repos.py` — 候选项目发现：`python scripts/discover_repos.py --topic ai-agent --language typescript [--beginner] [--json]`
 - `scripts/repo_health.py` — 仓库健康度体检（支持批量 + AI 政策检查，v3.2 去误报）：`python scripts/repo_health.py owner/repo [owner/repo2 ...] [--json]`
