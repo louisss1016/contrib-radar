@@ -101,4 +101,5 @@ def gh_days_ago(days):
 
 
 if __name__ == "__main__":
+    gh.ensure_utf8_stdio()
     main()

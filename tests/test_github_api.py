@@ -1,4 +1,6 @@
-"""github_api 共享模块测试：parse_repo / days_ago 等纯函数。"""
+"""github_api 共享模块测试：parse_repo / days_ago / ensure_utf8_stdio。"""
+import io
+import sys
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -66,6 +68,49 @@ class TestDaysAgo(unittest.TestCase):
 
     def test_invalid_input(self):
         self.assertIsNone(gh.days_ago("not-a-date"))
+
+
+class TestEnsureUtf8Stdio(unittest.TestCase):
+    """Windows GBK(cp936) 控制台/管道下 print emoji 崩溃的修复验证。"""
+
+    def setUp(self):
+        self._old_out, self._old_err = sys.stdout, sys.stderr
+
+    def tearDown(self):
+        sys.stdout, sys.stderr = self._old_out, self._old_err
+
+    def test_reconfigures_streams_to_utf8(self):
+        calls = []
+
+        class Spy:
+            def reconfigure(self, **kwargs):
+                calls.append(kwargs)
+
+        sys.stdout = sys.stderr = Spy()
+        gh.ensure_utf8_stdio()
+        self.assertEqual(calls, [{"encoding": "utf-8"}, {"encoding": "utf-8"}])
+
+    def test_stream_without_reconfigure_is_safe(self):
+        sys.stdout = sys.stderr = io.StringIO()
+        gh.ensure_utf8_stdio()  # 不抛异常即通过
+
+    def test_none_stream_is_safe(self):
+        sys.stdout = sys.stderr = None
+        gh.ensure_utf8_stdio()  # 不抛异常即通过
+
+    def test_emoji_survives_ascii_stream(self):
+        # 复现崩溃场景：流编码为 ascii（类比 GBK 无 emoji 字形），
+        # 修复后 print ⭐🟢✓ 不再抛 UnicodeEncodeError，且按 UTF-8 落字节
+        buf = io.BytesIO()
+        wrapper = io.TextIOWrapper(buf, encoding="ascii")
+        sys.stdout = wrapper
+        try:
+            gh.ensure_utf8_stdio()
+            print("⭐🟢✓")
+            wrapper.flush()
+        finally:
+            sys.stdout = self._old_out
+        self.assertEqual(buf.getvalue().decode("utf-8").strip(), "⭐🟢✓")
 
 
 if __name__ == "__main__":

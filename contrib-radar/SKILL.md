@@ -22,6 +22,7 @@ v3.3 更新：决策可解释性升级——`find_issues.py` 新增 Collision Ri
 v3.4 更新：打分模型升级——Contribution Score 拆分为 Issue Quality（清晰度30+标签15+新鲜度25+milestone20+讨论10）和 Contribution Feasibility（撞车30+修改范围25+新手友好25+技术栈匹配20）双维度，最终分 = Quality×0.5 + Feasibility×0.5；新增 `--stack` 技术栈匹配度（Stack Match % + 逐项 ✓/—），匹配仓库主语言和 issue 正文关键词。
 v3.5 更新：新增 `references/api-pr-submission.md`——git clone/push 被代理或防火墙阻断时，改用纯 GitHub REST API（fork → Git Data API → PR）完成提交；Route C+ 提交步骤挂接该降级通道。
 v3.6 更新：Route C+ 全面自动化——取消默认流程中的两个人工确认点，扫描、筛选、实现、提交、维护全程无人干预；6 项质量门控 + 冷却期 + 黑名单成为唯一安全防线（不过不提交）；人工确认降级为可选保守模式（用户在 Query 中显式开启才生效）。
+v3.6.1 更新：Windows 兼容性修复——`github_api.py` 新增 `ensure_utf8_stdio()`（交互终端切代码页 65001 + stdio reconfigure UTF-8），五个入口脚本启动时调用；修复 Windows GBK(cp936) 控制台/管道下输出 ⭐🟢✓• 等字符时 `print` 抛 `UnicodeEncodeError` 直接崩溃的问题（JSON 输出为 `ensure_ascii=False`，必崩）；新增 4 个回归测试。
 
 ## 触发条件
 

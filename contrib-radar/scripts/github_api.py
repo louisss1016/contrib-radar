@@ -120,6 +120,32 @@ def days_ago(iso):
         return None
 
 
+def ensure_utf8_stdio():
+    """把 stdio 切到 UTF-8，修 Windows 下 print emoji/符号直接崩溃的问题。
+
+    Windows 控制台与重定向默认 GBK(cp936)，脚本输出含 ⭐🟢✓• 等字符、
+    且 JSON 用 ensure_ascii=False 时，print 会抛 UnicodeEncodeError。
+    交互式终端额外把代码页切到 65001 保证正确渲染；管道/重定向场景
+    只 reconfigure，让下游按 UTF-8 解码。幂等；无 reconfigure 的
+    老版本 Python 或非常规流（已被替换/捕获）时静默跳过。
+    """
+    if sys.platform == "win32":
+        try:
+            if sys.stdout is not None and sys.stdout.isatty():
+                import ctypes
+                ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        except (AttributeError, OSError):
+            pass
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def fetch_file_content(owner, repo, path):
     """读取仓库内文本文件内容（如 CONTRIBUTING.md）。
 
@@ -141,6 +167,7 @@ def fatal(msg):
 
 
 if __name__ == "__main__":
+    ensure_utf8_stdio()
     # 自检：python github_api.py owner/repo 打印仓库基本元数据
     if len(sys.argv) != 2:
         sys.exit("自检用法: python github_api.py owner/repo")

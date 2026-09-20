@@ -260,4 +260,5 @@ def main():
 
 
 if __name__ == "__main__":
+    gh.ensure_utf8_stdio()
     main()
