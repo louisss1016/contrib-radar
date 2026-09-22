@@ -178,7 +178,8 @@ def main():
     ap.add_argument("--json", action="store_true", help="JSON 输出")
     ap.add_argument("--quiet", action="store_true", help="关闭 stderr 进度输出")
     args = ap.parse_args()
-    pg.set_quiet(args.quiet)
+    if args.quiet:
+        pg.set_quiet(True)  # --quiet 覆盖 CR_QUIET 默认值
 
     # 解析参数：支持直接传 issue URL
     if args.repo.startswith("http"):
