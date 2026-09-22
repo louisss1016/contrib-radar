@@ -22,6 +22,7 @@ v3.3 更新：决策可解释性升级——`find_issues.py` 新增 Collision Ri
 v3.4 更新：打分模型升级——Contribution Score 拆分为 Issue Quality（清晰度30+标签15+新鲜度25+milestone20+讨论10）和 Contribution Feasibility（撞车30+修改范围25+新手友好25+技术栈匹配20）双维度，最终分 = Quality×0.5 + Feasibility×0.5；新增 `--stack` 技术栈匹配度（Stack Match % + 逐项 ✓/—），匹配仓库主语言和 issue 正文关键词。
 v3.5 更新：新增 `references/api-pr-submission.md`——git clone/push 被代理或防火墙阻断时，改用纯 GitHub REST API（fork → Git Data API → PR）完成提交；Route C+ 提交步骤挂接该降级通道。
 v3.6 更新：Route C+ 全面自动化——取消默认流程中的两个人工确认点，扫描、筛选、实现、提交、维护全程无人干预；6 项质量门控 + 冷却期 + 黑名单成为唯一安全防线（不过不提交）；人工确认降级为可选保守模式（用户在 Query 中显式开启才生效）。
+v3.7 更新：执行可视化——新增 `scripts/progress.py` 共享进度事件模块，五个入口脚本按阶段向 stderr 发射 `[CR-PROGRESS]` 单行 JSON 事件（管道模式，agent/CI 消费）或刷新 ASCII 进度条（TTY 模式，人类观看），stdout 数据契约不受影响；SKILL.md 新增「执行可视化规范」（双层更新机制 / 进度卡片四区域 / Route 阶段序列表 / 异常状态处理 / 核心功能不受影响硬约束）。
 v3.6.1 更新：Windows 兼容性修复——`github_api.py` 新增 `ensure_utf8_stdio()`（交互终端切代码页 65001 + stdio reconfigure UTF-8），五个入口脚本启动时调用；修复 Windows GBK(cp936) 控制台/管道下输出 ⭐🟢✓• 等字符时 `print` 抛 `UnicodeEncodeError` 直接崩溃的问题（JSON 输出为 `ensure_ascii=False`，必崩）；新增 4 个回归测试。
 
 ## 触发条件
@@ -66,6 +67,55 @@ v3.6.1 更新：Windows 兼容性修复——`github_api.py` 新增 `ensure_utf8
 > （只对 search 端点打点，403 时按 X-RateLimit-Reset 等待重试）。多仓库批量筛查强烈建议设置
 > `GITHUB_TOKEN`（core 5000/时、Search 30/分）或使用已绑定的 MCP/OAuth 连接，避免等待或降级。
 > **注意**：未认证 API 限流耗尽后，MCP/OAuth 连接不受影响，应优先切换到 MCP 通道。
+
+## 执行可视化规范（v3.7）
+
+执行期间必须让用户清晰看到运行进度。核心原则：**真进度可以慢，假进度不许有**。
+
+### 更新机制（双层）
+
+| 层 | 载体 | 消费者 | 形式 |
+|---|---|---|---|
+| 脚本层 | 五个入口脚本 + `scripts/progress.py` | agent / CI | 管道模式：stderr 逐行 `[CR-PROGRESS] {json}` 事件（纯 ASCII，GBK 安全）；TTY 模式：ASCII 进度条原地刷新 |
+| Agent 层 | 对话内进度卡片 | 用户 | 阶段边界刷新，聚合脚本事件 + agent 自身执行状态 |
+
+- 脚本事件字段：`phase / status(start|running|ok|warn|error|skip|done) / current / total / item / detail`。
+- 批量命令（体检多仓库、扫描多 issue）执行期间无法增量刷新卡片：条目级进度以 stderr 事件为准，命令返回后在下一次卡片刷新时汇总。
+- 纯 LLM 阅读阶段（读 CONTRIBUTING、逐条读 issue 正文）没有脚本事件，卡片显示"进行中"，**不得编造百分比**。
+- 双通道互斥且自动选择：stderr 是管道（agent 消费）出 JSON 事件；stderr 是 TTY（人类观看）出 ASCII 进度条。`CR_PROGRESS_BAR=1` 可强制进度条，`CR_QUIET=1` 或 `--quiet` 全部关闭。
+
+### 展示形式（进度卡片）
+
+预计 ≥2 个阶段或 ≥3 次工具调用的执行，渲染一张进度卡片，包含四个区域：
+
+1. **阶段步骤条**：当前 Route 的阶段序列（见下表），已完成 ✓ / 进行中 ▶ / 未开始 ○ / 失败 ✗；
+2. **当前状态行**：正在执行的动作 + 计数器（如"体检 3/10"）+ 当前条目名；
+3. **阶段性成果**：已完成阶段的关键数字（候选 N 个 / 高分 issue M 条 / 待跟踪 PR K 个）；
+4. **异常区**（有异常才出现）：红色状态 + 失败项 + 已采取的降级动作。
+
+Route 阶段序列（卡片步骤条的数据源，脚本 phase 名与之对齐）：
+
+| Route | 阶段序列 | 脚本 phase 名 |
+|---|---|---|
+| A | 画像收集 → 项目发现 → 健康度体检 → 候选清单 | `repo-discover` / `health-check` |
+| B | 项目理解 → Issue 筛选 → 撞车检测 → 架构分析 → Top 3 建议 | `issue-fetch`(+`issue-fallback`) / `collision-detect` / `issue-score` |
+| B（认领） | bot 检测 → 冲突检查 → 建议生成 | `claim-bot-detect` / `conflict-check` |
+| C | 跨仓扫描 → 撞车复核 → 日报 diff → 输出 | 复用上述 phase |
+| C+ | 状态读取 → 打分筛选 → 自动实现 → 质量门控 → 提交 → PR 跟踪 | `pr-track` 等 |
+
+### 异常状态处理
+
+- **单条目失败**（API 错误 / 超时 / 解析失败）：该条目标 ✗ 并继续，批次结束时汇总失败清单与原因（脚本已发 `error` / `skip` 事件，卡片必须呈现）；
+- **整阶段失败**（限流 / 认证失效）：显示降级链当前所在层级（MCP/OAuth → gh CLI → 脚本 → WebFetch → WebSearch），按既有降级链执行并如实标注；
+- **质量门控未过**（Route C+）：明确显示"未提交" + 未过项，禁止静默跳过；
+- **通用红线**：任何异常不得渲染为成功；事件中的 `warn` / `error` / `skip` 必须原样呈现。
+
+### 不干扰核心功能（硬约束）
+
+- 进度输出只走 stderr；`--json` 的 stdout 契约不变（纯 JSON，无进度行混入）；
+- 进度代码零第三方依赖；`--quiet` / `CR_QUIET=1` 可完全关闭；
+- 进度字符串纯 ASCII（GBK 控制台安全，与 v3.6.1 同一原则）；
+- 进度事件不得改变任何打分、筛选、门控逻辑。
 
 ## Route A：项目发现（无 URL 时）
 
@@ -274,6 +324,7 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
 - `references/communication-templates.md` — 英文沟通模板：Issue 认领、方向提案、PR 描述、回应 review、礼貌跟进
 - `references/api-pr-submission.md` — git 不可用时的纯 REST API 提 PR 流程（fork → Git Data API → PR），含脚本骨架与坑
 - `scripts/github_api.py` — 共享 GitHub API 封装（统一请求/限速/降级/仓库解析），三个脚本共用
+- `scripts/progress.py` — 共享执行进度事件（v3.7）：管道模式发 `[CR-PROGRESS]` JSON 事件，TTY 模式刷 ASCII 进度条，全部走 stderr；`--quiet` / `CR_QUIET=1` 关闭
 - `scripts/discover_repos.py` — 候选项目发现：`python scripts/discover_repos.py --topic ai-agent --language typescript [--beginner] [--json]`
 - `scripts/repo_health.py` — 仓库健康度体检（支持批量 + AI 政策检查，v3.2 去误报）：`python scripts/repo_health.py owner/repo [owner/repo2 ...] [--json]`
 - `scripts/find_issues.py` — 可认领 Issue 机筛与打分（含撞车检测 + 标签零命中 fallback + milestone 维度）：`python scripts/find_issues.py owner/repo [--include-bugs] [--json] [--no-fallback]`

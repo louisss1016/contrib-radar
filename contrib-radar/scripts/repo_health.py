@@ -6,6 +6,10 @@
     python repo_health.py https://github.com/owner/repo
     python repo_health.py owner/repo1 owner/repo2 ...   # 批量体检候选项目
     python repo_health.py owner/repo --json             # JSON 输出（供自动化复用）
+    python repo_health.py owner/repo1 owner/repo2 --quiet  # 关闭 stderr 进度事件
+
+进度（v3.7）：批量体检期间向 stderr 发射 [CR-PROGRESS] JSON 事件
+（管道模式）或 ASCII 进度条（TTY 模式）；--json 的 stdout 契约不受影响。
 
 可选: 设置环境变量 GITHUB_TOKEN 以提高 API 速率限制
 （未认证时 Search 限 10 次/分，本脚本由共享模块自动打点；core 端点不打点）。
@@ -23,6 +27,7 @@ import json
 import sys
 
 import github_api as gh
+import progress as pg
 
 # AI 生成代码政策检查——禁止性短语（必须包含动词+对象，避免误报 AI 项目的正常提及）
 AI_POLICY_BLOCKED_PHRASES = [
@@ -158,18 +163,34 @@ def main():
     ap = argparse.ArgumentParser(description="GitHub 仓库健康度体检（v3.1）")
     ap.add_argument("repos", nargs="+", help="owner/repo 或 GitHub URL，可多个")
     ap.add_argument("--json", action="store_true", help="输出 JSON（供自动化复用）")
+    ap.add_argument("--quiet", action="store_true", help="关闭 stderr 进度输出")
     args = ap.parse_args()
+    pg.set_quiet(args.quiet)
 
     results = []
-    for arg in args.repos:
+    failed = 0
+    total = len(args.repos)
+    pg.phase("health-check", total=total)
+    for idx, arg in enumerate(args.repos, 1):
         owner, repo = gh.parse_repo(arg)
         if not owner:
+            pg.item(idx, total, arg, "skip", detail="unparseable", phase_name="health-check")
             print(f"跳过无法解析的参数: {arg}")
             continue
-        lines, score, total, extra = check_repo(owner, repo)
+        name = f"{owner}/{repo}"
+        pg.item(idx, total, name, "running", phase_name="health-check")
+        lines, score, max_score, extra = check_repo(owner, repo)
+        if lines and lines[0].startswith("仓库查询失败"):
+            pg.item(idx, total, name, "error", detail=lines[0], phase_name="health-check")
+            failed += 1
+        else:
+            pg.item(idx, total, name, "ok", detail=f"{score}/{max_score}", phase_name="health-check")
         print("\n" + "\n".join(lines))
-        results.append({"repo": f"{owner}/{repo}", "score": score, "max": total,
+        results.append({"repo": name, "score": score, "max": max_score,
                         "ai_policy": extra["ai_policy"], "ai_note": extra["ai_note"]})
+    pg.item_end()
+    pg.phase("health-check", "done",
+             detail=f"{len(results)} repos checked, {failed} failed")
 
     if len(results) > 1:
         print("\n===== 批量汇总（按健康度排序）=====")

@@ -14,6 +14,10 @@
     python pr_tracker.py owner/repo 72
     python pr_tracker.py owner/repo 72 --json
     python pr_tracker.py https://github.com/owner/repo/pull/72
+    python pr_tracker.py owner/repo 72 --quiet
+
+进度（v3.7）：合并性 / CI / Review / Rebase 四项检查按阶段向 stderr
+发射 [CR-PROGRESS] JSON 事件（管道模式）；--json 的 stdout 契约不受影响。
 
 可选: 设置环境变量 GITHUB_TOKEN 以提高 API 速率限制。
 """
@@ -24,6 +28,7 @@ import re
 import sys
 
 import github_api as gh
+import progress as pg
 
 
 def check_ci_status(owner, repo, pr_number, head_sha):
@@ -306,7 +311,9 @@ def main():
     ap.add_argument("repo", help="owner/repo 或 GitHub PR URL")
     ap.add_argument("pr_number", nargs="?", type=int, help="PR 编号（如果 repo 参数不是 URL）")
     ap.add_argument("--json", action="store_true", help="JSON 输出")
+    ap.add_argument("--quiet", action="store_true", help="关闭 stderr 进度输出")
     args = ap.parse_args()
+    pg.set_quiet(args.quiet)
 
     # 解析参数
     if args.repo.startswith("http"):
@@ -320,26 +327,51 @@ def main():
             sys.exit("需要提供 owner/repo 和 pr_number，或直接传 PR URL")
         pr_number = args.pr_number
 
+    pg.phase("pr-track", total=4, detail=f"{owner}/{repo}#{pr_number}")
+
     # 1. 基本信息 + 可合并性
+    pg.phase("mergeability")
     merge_info = check_mergeability(owner, repo, pr_number)
     if "error" in merge_info:
+        pg.phase("mergeability", "error", detail=str(merge_info["error"]))
         sys.exit(f"获取 PR 信息失败: {merge_info['error']}")
+    pg.phase("mergeability", "done",
+             detail=f"state={merge_info.get('state')}, mergeable={merge_info.get('mergeable')}")
 
     # 2. CI 状态
+    pg.phase("ci-check")
     ci_info = check_ci_status(owner, repo, pr_number, merge_info.get("head_sha"))
+    if "error" in ci_info:
+        pg.phase("ci-check", "error", detail=str(ci_info["error"]))
+    else:
+        pg.phase("ci-check", "done",
+                 detail=f"{ci_info.get('success')}/{ci_info.get('total')} passing, status={ci_info.get('status')}")
 
     # 3. Review 状态
+    pg.phase("review-check")
     review_info = check_reviews(owner, repo, pr_number)
+    if "error" in review_info:
+        pg.phase("review-check", "error", detail=str(review_info["error"]))
+    else:
+        pg.phase("review-check", "done",
+                 detail=f"{review_info.get('approved')} approved, {review_info.get('changes_requested')} changes requested")
 
     # 4. Rebase 检测
+    pg.phase("rebase-check")
     rebase_info = check_needs_rebase(
         owner, repo, pr_number,
         merge_info.get("base_branch"),
         merge_info.get("base_sha")
     )
+    if "error" in rebase_info:
+        pg.phase("rebase-check", "error", detail=str(rebase_info["error"]))
+    else:
+        pg.phase("rebase-check", "done",
+                 detail="needs rebase" if rebase_info.get("needs_rebase") else "up to date")
 
     # 5. 下一步动作
     next_actions = determine_next_action(merge_info, ci_info, review_info, rebase_info)
+    pg.phase("pr-track", "done", detail=f"{len(next_actions)} next actions")
 
     result = {
         "repo": f"{owner}/{repo}",

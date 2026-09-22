@@ -14,6 +14,10 @@
     python claim_issue.py owner/repo 25
     python claim_issue.py owner/repo 25 --json
     python claim_issue.py https://github.com/owner/repo/issues/25
+    python claim_issue.py owner/repo 25 --quiet
+
+进度（v3.7）：bot 检测 / 冲突检查 / 建议生成三阶段向 stderr 发射
+[CR-PROGRESS] JSON 事件（管道模式）；--json 的 stdout 契约不受影响。
 
 可选: 设置环境变量 GITHUB_TOKEN 以提高 API 速率限制。
 """
@@ -24,6 +28,7 @@ import re
 import sys
 
 import github_api as gh
+import progress as pg
 
 # 认领 bot 的 workflow 文件名关键词
 CLAIM_BOT_PATTERNS = [
@@ -171,7 +176,9 @@ def main():
     ap.add_argument("repo", help="owner/repo 或 GitHub issue URL")
     ap.add_argument("issue_number", nargs="?", type=int, help="Issue 编号（如果 repo 参数不是 URL）")
     ap.add_argument("--json", action="store_true", help="JSON 输出")
+    ap.add_argument("--quiet", action="store_true", help="关闭 stderr 进度输出")
     args = ap.parse_args()
+    pg.set_quiet(args.quiet)
 
     # 解析参数：支持直接传 issue URL
     if args.repo.startswith("http"):
@@ -185,14 +192,28 @@ def main():
             sys.exit("需要提供 owner/repo 和 issue_number，或直接传 issue URL")
         issue_number = args.issue_number
 
+    pg.phase("claim-check", total=3, detail=f"{owner}/{repo}#{issue_number}")
+
     # 1. 检测 claim bot
+    pg.phase("claim-bot-detect")
     has_bot, bot_name, bot_path = detect_claim_bot(owner, repo)
+    pg.phase("claim-bot-detect", "done" if has_bot else "warn",
+             detail=bot_name if has_bot else "no claim bot, comment claim required")
 
     # 2. 检查认领冲突
+    pg.phase("conflict-check")
     conflict_info = check_claim_conflict(owner, repo, issue_number)
+    if conflict_info.get("error"):
+        pg.phase("conflict-check", "error", detail=str(conflict_info["error"]))
+    elif conflict_info["conflict"]:
+        pg.phase("conflict-check", "warn",
+                 detail=f"conflict: {len(conflict_info['conflict_reasons'])} reasons")
+    else:
+        pg.phase("conflict-check", "done", detail="no conflict")
 
     # 3. 生成认领建议
     suggestion = generate_claim_suggestion(has_bot, bot_name, conflict_info)
+    pg.phase("claim-check", "done", detail=f"suggestion: {suggestion['action']}")
 
     result = {
         "repo": f"{owner}/{repo}",

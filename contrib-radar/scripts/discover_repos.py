@@ -13,6 +13,9 @@
     python discover_repos.py --beginner python                # 新手甜蜜区（100~1000 star）
     python discover_repos.py --topic mcp --json               # JSON 输出
 
+进度（v3.7）：发现阶段向 stderr 发射 [CR-PROGRESS] JSON 事件（管道模式）；
+--json 的 stdout 契约不受影响。
+
 可选: 设置环境变量 GITHUB_TOKEN 以提高 API 速率限制。
 
 v3 相对 v2 的变化:
@@ -28,6 +31,7 @@ import sys
 import urllib.parse
 
 import github_api as gh
+import progress as pg
 
 
 def build_query(args):
@@ -57,17 +61,22 @@ def main():
                     help="新手甜蜜区模式：star 100~1000，竞争小、维护者回复快（覆盖 --stars/--max-stars）")
     ap.add_argument("--limit", type=int, default=10, help="返回数量，默认 10，最大 30")
     ap.add_argument("--json", action="store_true", help="JSON 输出")
+    ap.add_argument("--quiet", action="store_true", help="关闭 stderr 进度输出")
     args = ap.parse_args()
+    pg.set_quiet(args.quiet)
 
     q = build_query(args)
+    pg.phase("repo-discover", detail=f"query: {q[:80]}")
     per_page = min(args.limit, 30)
     data = gh.get("/search/repositories?q=" + urllib.parse.quote(q)
                   + f"&sort=updated&order=desc&per_page={per_page}", search=True)
     if "_error" in data:
+        pg.phase("repo-discover", "error", detail=str(data["_error"]))
         sys.exit(f"搜索失败: {data['_error']}")
 
     items = data.get("items", [])
     if not items:
+        pg.phase("repo-discover", "done", detail="0 hits")
         sys.exit("没有符合条件的仓库。可尝试放宽 --stars 或 --pushed-days，或 --beginner 甜蜜区。")
 
     rows = []
@@ -79,6 +88,8 @@ def main():
             "description": (r.get("description") or "").replace("\n", " ")[:100],
             "url": r["html_url"],
         })
+    pg.phase("repo-discover", "done",
+             detail=f"{data.get('total_count')} hits, top {len(rows)} listed")
 
     if args.json:
         print(json.dumps({"query": q, "total": data.get("total_count"), "repos": rows},

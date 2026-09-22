@@ -25,6 +25,10 @@ v3.4: Contribution Score 拆分为 Issue Quality + Contribution Feasibility 双�
     python find_issues.py owner/repo --no-fallback
     python find_issues.py owner/repo --show-collision
 
+进度（v3.7）：抓取 / 撞车检测 / 打分三阶段向 stderr 发射 [CR-PROGRESS]
+JSON 事件（管道模式）或 ASCII 进度条（TTY 模式）；--json 的 stdout 契约
+不受影响。
+
 可选: 设置环境变量 GITHUB_TOKEN 以提高 API 速率限制（强烈建议）。
 """
 
@@ -34,6 +38,7 @@ import re
 import sys
 
 import github_api as gh
+import progress as pg
 
 DEFAULT_LABELS = ["good first issue", "help wanted"]
 BEGINNER_ONLY_LABELS = ["good first issue", "help wanted", "first-timers-only", "beginner friendly"]
@@ -332,7 +337,9 @@ def main():
     ap.add_argument("--show-collision", action="store_true", help="显示被隐藏的高碰撞风险 issue")
     ap.add_argument("--stack", default="", help="你的技术栈（逗号分隔），如 python,langchain,fastapi")
     ap.add_argument("--json", action="store_true", help="JSON 输出")
+    ap.add_argument("--quiet", action="store_true", help="关闭 stderr 进度输出")
     args = ap.parse_args()
+    pg.set_quiet(args.quiet)
 
     owner, repo = gh.parse_repo(args.repo)
     if not owner:
@@ -359,25 +366,34 @@ def main():
 
     # 1) 按标签逐标签搜索
     seen = {}
-    for label in labels:
+    pg.phase("issue-fetch", total=len(labels))
+    for li, label in enumerate(labels, 1):
+        pg.item(li, len(labels), label, "running", phase_name="issue-fetch")
         q = f"repo:{owner}/{repo} type:issue state:open no:assignee updated:>={since} label:" + json.dumps(label)
         data = gh.get("/search/issues?q=" + quote(q) + "&sort=updated&order=desc&per_page=30", search=True)
         if "_error" in data:
+            pg.item(li, len(labels), label, "error", detail=str(data["_error"]), phase_name="issue-fetch")
             print(f"[警告] 标签 '{label}' 搜索失败: {data['_error']}，跳过该标签")
             continue
         for it in data.get("items", []):
             seen[it["number"]] = it
+        pg.item(li, len(labels), label, "ok", detail=f"{len(data.get('items', []))} hits", phase_name="issue-fetch")
+    pg.item_end()
 
     # 1b) Fallback
     if not seen and not args.no_fallback:
         print(f"[信息] 标签搜索零命中，自动 fallback 到全量 open issue 列表...")
+        pg.phase("issue-fallback", total=3)
         page = 1
         while page <= 3:
+            pg.item(page, 3, f"page {page}", "running", phase_name="issue-fallback")
             all_data = gh.get(f"/repos/{owner}/{repo}/issues?state=open&per_page=100&page={page}")
             if "_error" in all_data:
+                pg.item(page, 3, f"page {page}", "error", detail=str(all_data["_error"]), phase_name="issue-fallback")
                 print(f"[警告] 全量 issue 拉取失败: {all_data['_error']}")
                 break
             if not isinstance(all_data, list) or not all_data:
+                pg.item(page, 3, f"page {page}", "ok", detail="empty", phase_name="issue-fallback")
                 break
             for it in all_data:
                 if "pull_request" in it:
@@ -385,14 +401,18 @@ def main():
                 if it.get("assignee"):
                     continue
                 seen[it["number"]] = it
+            pg.item(page, 3, f"page {page}", "ok", detail=f"{len(seen)} candidates", phase_name="issue-fallback")
             if len(all_data) < 100:
                 break
             page += 1
+        pg.item_end()
+        pg.phase("issue-fallback", "done", detail=f"{len(seen)} issues after fallback")
 
     if not seen:
         sys.exit("没有符合条件的 Issue。可尝试 --days 放宽时间，或 --include-bugs / 自定义 --labels。")
 
     # 2) 撞车检测
+    pg.phase("collision-detect")
     pr_refs_map = {}
     pr_data = gh.get(f"/search/issues?q=repo:{owner}/{repo}+type:pr+state:open&per_page=100", search=True)
     if "_error" not in pr_data:
@@ -408,12 +428,18 @@ def main():
                 if ref_num not in pr_refs_map:
                     pr_refs_map[ref_num] = []
                 pr_refs_map[ref_num].append(pr_info)
+    else:
+        pg.phase("collision-detect", "error", detail=str(pr_data["_error"]))
+    pg.phase("collision-detect", "done", detail=f"{len(pr_refs_map)} PR refs scanned")
 
     # 3) 双维度打分
     safe_rows = []
     hidden_rows = []
 
-    for num, it in sorted(seen.items(), key=lambda x: -_updated_ts(x[1])):
+    total_issues = len(seen)
+    pg.phase("issue-score", total=total_issues)
+    for si, (num, it) in enumerate(sorted(seen.items(), key=lambda x: -_updated_ts(x[1])), 1):
+        pg.item(si, total_issues, f"#{num}", "running", phase_name="issue-score")
         days = gh.days_ago(it.get("updated_at"))
         quality, quality_parts = score_issue_quality(it, days)
         risk, reasons, recommendation = compute_collision_risk(it, pr_refs_map)
@@ -422,6 +448,7 @@ def main():
         contribution_score = round(quality * 0.5 + feasibility * 0.5)
 
         if contribution_score < args.min_score:
+            pg.item(si, total_issues, f"#{num}", "skip", detail=f"score {contribution_score} < min", phase_name="issue-score")
             continue
 
         checks, warnings = generate_why(quality_parts, feasibility_parts, risk, days, stack_pct, stack_details)
@@ -438,8 +465,14 @@ def main():
 
         if risk == "HIGH":
             hidden_rows.append(row)
+            pg.item(si, total_issues, f"#{num}", "warn", detail=f"score {contribution_score}, collision HIGH (hidden)", phase_name="issue-score")
         else:
             safe_rows.append(row)
+            pg.item(si, total_issues, f"#{num}", "ok", detail=f"score {contribution_score}, collision {risk}", phase_name="issue-score")
+
+    pg.item_end()
+    pg.phase("issue-score", "done",
+             detail=f"{len(safe_rows)} safe, {len(hidden_rows)} hidden (HIGH collision)")
 
     safe_rows.sort(key=lambda x: -x["score"])
     safe_rows = safe_rows[:args.limit]
