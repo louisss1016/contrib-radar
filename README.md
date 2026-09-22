@@ -14,9 +14,32 @@
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-compatible-purple.svg)](https://agentskills.io)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/louisss1016/contrib-radar/issues)
 
-**[快速开始](#-快速开始) · [它解决什么问题](#-它解决什么问题) · [真实效果](#-真实效果) · [命令参考](#-命令参考) · [执行可视化](#-执行可视化v37) · [工作流程](#-工作流程) · [定时任务自动化](#-定时任务自动化) · [设计原则](#-设计原则) · [FAQ](#-faq)**
+**[先授权 GitHub](#-开始之前先授权-github) · [快速开始](#-快速开始) · [它解决什么问题](#-它解决什么问题) · [真实效果](#-真实效果) · [命令参考](#-命令参考) · [执行可视化](#-执行可视化v37) · [工作流程](#-工作流程) · [定时任务自动化](#-定时任务自动化) · [设计原则](#-设计原则) · [FAQ](#-faq)**
 
 </div>
+
+---
+
+## 🔐 开始之前：先授权 GitHub
+
+本工具的终点是**替你向开源仓库提 PR / commit**——fork、push、开 PR 全部以授权 token 所属的 GitHub 账号身份执行。**动手之前必须先授权并确认身份**，否则你不会知道 PR 将以哪个账号提交。
+
+```bash
+python contrib-radar/scripts/auth_check.py --json
+```
+
+- `authenticated: true` → 记下 `login`，这就是你提 PR 的账号，继续
+- `authenticated: false` → 按输出中的授权步骤完成授权后重试；**未授权时不会进入认领 / 提 PR / commit 流程**
+
+三条授权路径任选其一（详细步骤见 `auth_check.py` 输出）：
+
+| 路径 | 适用场景 |
+|------|---------|
+| **Personal Access Token**（[github.com/settings/tokens](https://github.com/settings/tokens) 生成，Classic 勾 `repo`）→ 存入 `GITHUB_TOKEN` 环境变量或 `~/.contrib-radar/token` | 最通用，任何环境可用 |
+| **`gh auth login`** | 本机已装 GitHub CLI |
+| **绑定 GitHub 连接器**（WorkBuddy 等带连接器的环境，连接器管理搜 GitHub 完成 OAuth） | 绑定即视为已授权，读写优先走此通道，且不受未认证限流影响 |
+
+> 只读操作（发现项目 / 筛 issue / 体检）可免认证先行；一旦进入认领评论、提 PR、commit 等写操作，必须先过授权门控。token 解析优先级：环境变量 `GITHUB_TOKEN` → `gh auth token` → git credential helper → `~/.contrib-radar/token`。
 
 ---
 
@@ -72,7 +95,13 @@ git clone https://github.com/louisss1016/contrib-radar.git
 
 **对话式**（推荐）：在支持 Agent Skills 的对话里直接说——
 
-> 帮我找一个 TypeScript 写的 AI Agent 方向、star 100~1000 的开源项目。
+**场景一 · 全自动**（无人干预，从挖项目到提 PR 一把梭）：
+
+> 帮我在 AI Agent 方向自动挖一批高星项目（star 1000+，TypeScript / Python 均可），然后全自动执行：筛可认领 issue → 写代码 → commit → 提 PR，严格按 contrib-radar skill 的步骤流程来，全程不用停下来问我。动手前先跑授权预检，未授权就先给我 GitHub 授权步骤。
+
+**场景二 · 指定仓库**（给定地址，只在这个仓库里筛 issue 并提交）：
+
+> 就盯这个仓库：https://github.com/\<owner/repo\>。筛它当前可认领的 issue，选好后直接写代码、commit 并提 PR，按 skill 对应流程执行，不要中途停下来问我。
 
 **命令行**：也可以把它当纯 CLI 工具用：
 
@@ -88,7 +117,7 @@ python pr_tracker.py <owner/repo> <pr_number>                                # �
 
 每个脚本都支持 `--help` 查看全部参数。
 
-> 💡 **建议设置环境变量 `GITHUB_TOKEN`**：Search 限额从 10/min 提升至 30/min、core 从 60/hr 提升至 5000/hr，并取消节流等待。如果使用已绑定 GitHub MCP/OAuth 的 Agent 平台，则不受未认证限流影响。
+> 💡 **提 PR / commit 前需要 GitHub 授权**（见上方「开始之前」）：未授权时脚本会给出授权步骤并停止。设置 `GITHUB_TOKEN` 后 Search 限额从 10/min 提升至 30/min、core 从 60/hr 提升至 5000/hr，并取消节流等待；使用已绑定 GitHub 连接器的 Agent 平台则直接走 OAuth 通道。
 
 ---
 
@@ -268,6 +297,7 @@ Contribution Score (Top 3) .............................. 3 ⭐
 | `repo_health.py` | 12 项健康度体检 + AI 政策扫描 | 多仓库批量、`--json`（单项缺失自动降级，不中断）、`--quiet` |
 | `find_issues.py` | Issue 筛选、双维度打分（Quality + Feasibility）、Collision Risk、Stack Match、Why this issue? | `--days` `--labels` `--include-bugs` `--beginner-only` `--limit` `--min-score` `--no-fallback` `--show-collision` `--stack` `--json` `--quiet` |
 | `claim_issue.py` | 认领方式检测 + 认领冲突检查 | 接受 `owner/repo N` 或 issue URL、`--json` `--quiet` |
+| `auth_check.py` | GitHub 授权预检（写操作前置门控，v3.8） | 四源 token 解析 + 身份验证；未认证时输出授权步骤。退出码 0=已认证、1=未认证、2=瞬时错误 |
 | `pr_tracker.py` | PR 生命周期跟踪 + 下一步动作判断 | 接受 `owner/repo N` 或 PR URL、`--json` `--quiet` |
 
 > 全部脚本支持 `--help`；输出格式（人读表格 / `--json`）可随场景切换；`--quiet` 或环境变量 `CR_QUIET=1` 关闭 stderr 进度输出（见「执行可视化」）。
@@ -295,7 +325,7 @@ Contribution Score (Top 3) .............................. 3 ⭐
 [CR-PROGRESS] {"phase": "health-check", "status": "done", "detail": "1 repos checked, 0 failed"}
 ```
 
-五个入口脚本共插桩 14 个阶段：`health-check`；`issue-fetch` / `issue-fallback` / `collision-detect` / `issue-score`；`pr-track` / `mergeability` / `ci-check` / `review-check` / `rebase-check`；`claim-check` / `claim-bot-detect` / `conflict-check`；`repo-discover`。Agent 侧消费约定见 `SKILL.md`「执行可视化规范」。
+六个入口脚本共插桩 17 个阶段：`health-check`；`issue-fetch` / `issue-fallback` / `collision-detect` / `issue-score`；`pr-track` / `mergeability` / `ci-check` / `review-check` / `rebase-check`；`claim-check` / `claim-bot-detect` / `conflict-check` / `auth-check`；`repo-discover`；`auth-check` / `auth-resolve` / `auth-verify`（`auth_check.py`）。Agent 侧消费约定见 `SKILL.md`「执行可视化规范」。
 
 ---
 
@@ -330,6 +360,7 @@ Contrib Radar 明确区分**脚本能力**（确定性、可复现、零依赖�
 | Issue 筛选 + 打分 | `find_issues.py` | ✅ |
 | Collision Risk 检测 | `find_issues.py` | ✅ |
 | 认领方式检测 + 冲突检查 | `claim_issue.py` | ✅ |
+| GitHub 授权预检（写操作门控） | `auth_check.py` | ✅ |
 | PR 生命周期跟踪 | `pr_tracker.py` | ✅ |
 | `--json` 结构化输出 | 全部脚本 | ✅ |
 
@@ -359,7 +390,7 @@ Contrib Radar 明确区分**脚本能力**（确定性、可复现、零依赖�
 1. 创建一个每天执行的定时任务（建议早上 8:00，cron `0 8 * * *`）
 2. 将下方的 **Query 模板** 复制到任务的 query 字段
 3. 根据你的技术栈和偏好修改 `【用户画像】` 部分
-4. 确保 GitHub MCP/OAuth 已绑定（用于 fork / push / 创建 PR）
+4. 先跑授权预检 `python scripts/auth_check.py --json`（未授权按指引完成授权：GitHub 连接器 / PAT / gh CLI 任选其一）——fork / push / 创建 PR 以该账号身份执行
 
 ### Query 模板（可直接复制）
 
@@ -380,6 +411,7 @@ Contrib Radar 明确区分**脚本能力**（确定性、可复现、零依赖�
 - 偏好：commit message 用中文，PR 标题用英文
 
 【每日执行流程】
+0. 授权预检：运行 scripts/auth_check.py --json；authenticated 为 false 时按 guidance 给出授权步骤并终止当日流程（未授权不得执行任何写操作）
 1. 读取当前工作目录的 contrib-radar-state.json，恢复上次进度（已扫描 issue、活跃 PR、黑名单、冷却期）
 2. 项目发现：运行 scripts/discover_repos.py，分别用 --language typescript --beginner 和 --language python --beginner，各取 top 5
 3. 健康度筛查：对候选批量运行 scripts/repo_health.py，过滤 AI 政策 blocked 和健康度 < 50% 的
@@ -431,7 +463,7 @@ Contrib Radar 明确区分**脚本能力**（确定性、可复现、零依赖�
 ### 注意事项
 
 - **全自动的兜底机制**：没有人工把关，质量门控就是唯一防线——6 项门控任何一项不过就不提交；每仓库同时最多 1 个活跃 PR、每天最多 1 个新 PR、PR 被拒进 7 天冷却期、AI 政策 blocked 的仓库进黑名单。多层兜底保证「自动但不失控」
-- **GitHub 认证**：提交步骤（fork / push / create PR）依赖 GitHub MCP/OAuth 连接或 `gh` CLI 已登录。认证不可用时，自动实现和材料准备不受影响，提交步骤会提示你手动执行。若 `git clone`/`push` 被代理或防火墙阻断，可改用纯 REST API 提 PR，见 `references/api-pr-submission.md`
+- **GitHub 授权门控**：提 PR / commit 等写操作前必须先过 `auth_check.py` 预检（四源 token 解析 + 身份验证），未授权时按指引完成授权再继续——授权决定 PR 以哪个账号提交。若 `git clone`/`push` 被代理或防火墙阻断，可改用纯 REST API 提 PR，见 `references/api-pr-submission.md`
 - **保守模式（可选）**：首次使用建议在 Query 里加回两个人工确认点（选定 issue 后、提交 PR 前各确认一次），观察几天产出质量后再切回全自动
 - **Windows 环境**：如果在 Windows 上运行，注意 PowerShell 不支持 `&&`、`curl` 是别名、`git rebase --continue` 会打开 vim（用 `$env:GIT_EDITOR='true'` 跳过），这些已在 `contribution-workflow.md` 中说明
 
@@ -449,9 +481,10 @@ contrib-radar/
 │   ├── communication-templates.md #   交流模板：Issue/PR 提问、跟帖话术
 │   ├── example-analysis.md        #   完整案例分析（输出颗粒度校准）
 │   └── api-pr-submission.md       #   git 不可用时的纯 REST API 提 PR 流程
-└── scripts/                       # 零依赖 Python 工具（7 个）
-    ├── github_api.py              #   共享模块：请求/限速/重试/仓库解析
+└── scripts/                       # 零依赖 Python 工具（8 个）
+    ├── github_api.py              #   共享模块：请求/限速/重试/仓库解析/认证层（v3.8）
     ├── progress.py                #   执行可视化：双通道进度事件（只写 stderr）
+    ├── auth_check.py              #   GitHub 授权预检：四源 token 解析 + 身份验证（v3.8）
     ├── discover_repos.py          #   候选项目发现
     ├── find_issues.py             #   Issue 筛选 + 打分 + 撞车检测 + fallback
     ├── repo_health.py             #   健康度体检 + AI 政策检查（去误报）
@@ -466,12 +499,12 @@ contrib-radar/
 零依赖测试套件（仅用 Python 标准库 `unittest`），覆盖打分模型、碰撞检测、技术栈匹配、AI 政策去误报、API 工具函数。
 
 ```bash
-python run_tests.py          # 运行全部 64 个测试
+python run_tests.py          # 运行全部 93 个测试
 python run_tests.py -v       # 详细输出
 ```
 
 ```
-Ran 64 tests in 0.023s
+Ran 93 tests in 0.090s
 OK
 ```
 
@@ -480,8 +513,9 @@ OK
 | `test_scoring.py` | Issue Quality / Feasibility 打分、Stack Match、Score Regression | 32 |
 | `test_collision.py` | Collision Risk 分级（HIGH/MEDIUM/LOW） | 7 |
 | `test_ai_policy.py` | AI 政策去误报（"llm" 单独不触发、禁止性短语、中文） | 8 |
-| `test_github_api.py` | parse_repo / days_ago 纯函数、stdio 编码保障 | 17 |
-| **合计** | | **64** |
+| `test_github_api.py` | parse_repo / days_ago 纯函数、stdio 编码保障、认证层（token 解析优先级 / check_auth 各分支 / 授权指引 / require_auth 门控） | 39 |
+| `test_auth_check.py` | auth_check.py CLI：JSON 契约、退出码（0/1/2）、授权指引渲染、进度不污染 stdout | 7 |
+| **合计** | | **93** |
 
 **Score Regression Tests**：固定 3 个黄金样本（高/中/低价值 issue），验证打分结果不变。算法调整时必须同步更新期望值，并确认相对排序未被意外改变。
 
@@ -498,6 +532,7 @@ OK
 5. **状态驱动 + 门控兜底的全自动**：Route C+ 通过 `contrib-radar-state.json` 持久化进度，6 项质量门控 + 冷却期 + 黑名单多层兜底，全自动但不失控
 6. **遵守 Agent Skills 标准**：`SKILL.md` 自包含、name 用 kebab-case、description 写明「做什么 + 何时用」，可被主流 Agent 平台自动发现
 7. **执行过程可观测**：进度事件只写 stderr、单行 JSON、纯 ASCII——Agent 可实时消费，人类有进度条，而 stdout 的机器可读契约逐字节不变
+8. **授权先行、身份透明**：写操作以授权 token 所属账号身份执行——动手前先过 `auth_check.py` 预检并亮明账号，未授权不提交，杜绝"不知道 PR 提给了谁"
 
 ---
 
@@ -553,6 +588,15 @@ OK
 - `--quiet` 参数 / `CR_QUIET=1` 环境变量可整体关闭；进度只写 stderr，stdout 契约（含 `--json`）逐字节不变（真实 API 双版本比对验证）
 - `SKILL.md` 新增「执行可视化规范（v3.7）」章节，约定 Agent 侧消费方式
 
+**v3.8（已交付）**：GitHub 授权门控——
+
+- 新增 `scripts/auth_check.py` 授权预检入口：四源 token 解析（环境变量 `GITHUB_TOKEN` → `gh auth token` → git credential helper → `~/.contrib-radar/token`）+ `GET /user` 身份验证；未认证时输出授权步骤（PAT / gh CLI / GitHub 连接器三路径）并以非零码退出
+- `github_api.py` 新增认证层：`resolve_token()` / `check_auth()` / `auth_guidance()` / `require_auth()`（写操作前置门控，瞬时失败也拦住，宁可重试不带病提交）
+- `claim_issue.py` 输出增加认证状态段（`auth`：authenticated / source / login / error），认领流程插桩 `auth-check` 阶段
+- `SKILL.md` 文首新增「前置条件：GitHub 授权」：写操作以 token 所属账号身份执行，未授权禁止进入认领 / 提 PR / commit 流程；已绑定 GitHub 连接器（MCP/OAuth）即视为已授权
+- README 新增「开始之前：先授权 GitHub」章节；定时任务 Query 模板增加第 0 步授权预检
+- 测试 64 → 93：token 解析优先级、check_auth 各分支（200/401/403/网络/无 token）、授权指引结构、require_auth 门控、auth_check CLI 契约与退出码；真实环境双路径冒烟（已认证 exit 0 / 无任何 token exit 1 + 指引）
+
 **候选方向**（欢迎 Issue 讨论，暂未排期）：
 
 - MCP server 化：把脚本封装为 MCP 工具，供更多 Agent 平台直接调用
@@ -564,8 +608,8 @@ OK
 
 ## ❓ FAQ
 
-**需要 GitHub token 吗？**
-不需要，脚本开箱即用。但建议设置 `GITHUB_TOKEN` 以大幅提升速率限额并取消节流等待。如果使用已绑定 GitHub MCP/OAuth 的 Agent 平台（如豆包的 github-remote skill），则直接走 OAuth 通道，不受未认证限流影响。
+**提 PR 需要授权吗？只看看项目呢？**
+写操作（认领评论 / fork / push / create PR / commit）**必须授权**——它以 token 所属账号身份执行，动手前先跑 `python contrib-radar/scripts/auth_check.py --json` 确认身份，未授权会给出授权步骤并停止。只读操作（发现项目 / 筛 issue / 体检）可免认证先行，但会受未认证限流（Search 10/min、core 60/hr）。授权三选一：PAT（存入 `GITHUB_TOKEN` 或 `~/.contrib-radar/token`）、`gh auth login`、绑定 GitHub 连接器（WorkBuddy 等环境，OAuth 绑定即授权，读写优先走此通道）。
 
 **打分是 LLM 做的吗？会不会不准？**
 打分是确定性启发式（权重公开可审计），零成本、可复现；LLM 语义判断（如评论中是否有人认领）由 Agent 在读正文时补充，脚本不替代。

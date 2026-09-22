@@ -7,8 +7,9 @@
 3. 检查是否已有 open PR 引用该 issue（撞车检测）
 4. 输出认领建议（bot 命令或评论模板）
 
-注意：本脚本只做检测和准备，不实际发送评论。发送评论需要通过
-已认证的 MCP/OAuth 连接、gh CLI 或 GITHUB_TOKEN。
+注意：本脚本只做检测和准备，不实际发送评论。发送评论属于 GitHub 写
+操作，受授权门控约束（v3.8）：输出含认证状态段；未认证时运行
+python scripts/auth_check.py 按指引完成授权后再发。
 
 用法:
     python claim_issue.py owner/repo 25
@@ -193,7 +194,7 @@ def main():
             sys.exit("需要提供 owner/repo 和 issue_number，或直接传 issue URL")
         issue_number = args.issue_number
 
-    pg.phase("claim-check", total=3, detail=f"{owner}/{repo}#{issue_number}")
+    pg.phase("claim-check", total=4, detail=f"{owner}/{repo}#{issue_number}")
 
     # 1. 检测 claim bot
     pg.phase("claim-bot-detect")
@@ -214,6 +215,15 @@ def main():
 
     # 3. 生成认领建议
     suggestion = generate_claim_suggestion(has_bot, bot_name, conflict_info)
+
+    # 4. GitHub 认证状态（写操作前置门控，v3.8）
+    pg.phase("auth-check")
+    auth_info = gh.check_auth()
+    pg.phase("auth-check", "ok" if auth_info["authenticated"] else "warn",
+             detail=(f"authenticated as {auth_info['login']}"
+                     if auth_info["authenticated"]
+                     else f"not authenticated: {auth_info['error']}"))
+
     pg.phase("claim-check", "done", detail=f"suggestion: {suggestion['action']}")
 
     result = {
@@ -227,6 +237,12 @@ def main():
         },
         "conflict_check": conflict_info,
         "suggestion": suggestion,
+        "auth": {
+            "authenticated": auth_info["authenticated"],
+            "source": auth_info["source"],
+            "login": auth_info["login"],
+            "error": auth_info["error"],
+        },
     }
 
     if args.json:
@@ -277,8 +293,15 @@ def main():
         for inst in suggestion["instructions"]:
             print(f"     - {inst}")
 
+    print("\n=== GitHub 认证状态（写操作门控）===")
+    if auth_info["authenticated"]:
+        print(f"  ✅ 已认证: @{auth_info['login']}（token 来源: {auth_info['source']}）")
+        print("     认领评论 / 提 PR 将以此账号身份执行")
+    else:
+        print(f"  ⛔ 未认证（{auth_info['error']}）——发送认领评论前必须先授权")
+        print("     授权步骤: python scripts/auth_check.py（按指引完成授权后重试）")
+
     print("\n注意: 本脚本只做检测和建议，不实际发送评论。")
-    print("发送评论请通过已认证的 MCP/OAuth 连接、gh CLI 或 GITHUB_TOKEN。")
 
 
 if __name__ == "__main__":

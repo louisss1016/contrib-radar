@@ -23,6 +23,7 @@ v3.4 更新：打分模型升级——Contribution Score 拆分为 Issue Quality
 v3.5 更新：新增 `references/api-pr-submission.md`——git clone/push 被代理或防火墙阻断时，改用纯 GitHub REST API（fork → Git Data API → PR）完成提交；Route C+ 提交步骤挂接该降级通道。
 v3.6 更新：Route C+ 全面自动化——取消默认流程中的两个人工确认点，扫描、筛选、实现、提交、维护全程无人干预；6 项质量门控 + 冷却期 + 黑名单成为唯一安全防线（不过不提交）；人工确认降级为可选保守模式（用户在 Query 中显式开启才生效）。
 v3.7 更新：执行可视化——新增 `scripts/progress.py` 共享进度事件模块，五个入口脚本按阶段向 stderr 发射 `[CR-PROGRESS]` 单行 JSON 事件（管道模式，agent/CI 消费）或刷新 ASCII 进度条（TTY 模式，人类观看），stdout 数据契约不受影响；SKILL.md 新增「执行可视化规范」（双层更新机制 / 进度卡片四区域 / Route 阶段序列表 / 异常状态处理 / 核心功能不受影响硬约束）。
+v3.8 更新：GitHub 授权门控——新增 `scripts/auth_check.py` 授权预检入口与 `github_api.py` 认证层（四源 token 解析：环境变量 `GITHUB_TOKEN` → `gh auth token` → git credential helper → `~/.contrib-radar/token`；`GET /user` 验证有效性并返回提 PR 的身份账号）；SKILL.md 文首新增「前置条件：GitHub 授权」——写操作（认领评论 / fork / push / create PR / commit）以 token 所属账号身份执行，未授权时先给授权步骤、禁止继续；`claim_issue.py` 输出增加认证状态段；授权指引覆盖 PAT / gh CLI / GitHub 连接器（MCP/OAuth）三条路径。
 v3.6.1 更新：Windows 兼容性修复——`github_api.py` 新增 `ensure_utf8_stdio()`（交互终端切代码页 65001 + stdio reconfigure UTF-8），五个入口脚本启动时调用；修复 Windows GBK(cp936) 控制台/管道下输出 ⭐🟢✓• 等字符时 `print` 抛 `UnicodeEncodeError` 直接崩溃的问题（JSON 输出为 `ensure_ascii=False`，必崩）；新增 4 个回归测试。
 
 ## 触发条件
@@ -43,6 +44,21 @@ v3.6.1 更新：Windows 兼容性修复——`github_api.py` 新增 `ensure_utf8
 | 兴趣方向 | 否 | 如 "AI Agent / 后端框架 / DevOps"，默认 AI Agent |
 | 时间预算 | 否 | 默认 "2 周内可完成的 PR" |
 
+## 前置条件：GitHub 授权（使用本 skill 的第一步）
+
+本 skill 的终点是**替你向开源仓库提 PR / commit**——fork、push、开 PR 全部以授权 token 所属的 GitHub 账号身份执行。**动手之前必须先授权并确认身份**，否则你不会知道 PR 将以哪个账号提交，也无法进入任何写操作流程。
+
+1. **检测授权**：运行 `python scripts/auth_check.py --json`
+   - `authenticated: true` → 记下 `login`（这就是你提 PR 的账号），继续
+   - `authenticated: false` → 按返回的 `guidance` 完成授权后重试；**未授权时禁止进入认领 / 提 PR / commit 流程**
+2. **三条授权路径**（任选其一，详细步骤见 `guidance`）：
+   - **Personal Access Token（PAT，最通用）**：github.com/settings/tokens 生成 → 存入 `GITHUB_TOKEN` 环境变量或 `~/.contrib-radar/token` 文件
+   - **`gh auth login`**：本机已装 GitHub CLI 时最省事
+   - **绑定 GitHub 连接器（WorkBuddy 等带连接器的环境）**：连接器管理中搜索 GitHub 完成 OAuth 绑定——绑定即视为已认证，且该通道不受未认证限流影响，读写都优先走它
+3. **token 解析优先级**（`github_api.resolve_token()`，先命中先返回）：环境变量 `GITHUB_TOKEN` → `gh auth token` → git credential helper（不落盘不回显）→ `~/.contrib-radar/token`
+4. **只读豁免**：项目发现 / issue 扫描 / 体检等只读操作可免认证先行（限流降级）；一旦进入认领评论、提 PR、commit 等写操作，必须先过授权门控
+5. **token 失效**（`http_401`）：按授权步骤重新生成 / 更换 token 后重试，不要反复重试同一失效 token
+
 ## 路由逻辑
 
 ```
@@ -56,9 +72,9 @@ v3.6.1 更新：Windows 兼容性修复——`github_api.py` 新增 `ensure_utf8
 
 所有 GitHub 数据获取按以下顺序降级，任一级失败自动降下一级：
 
-1. **已绑定的 GitHub MCP / OAuth 连接**（如 `github-remote` skill 的 MCP 工具）：最可靠，走 OAuth 认证，不受未认证限流影响，支持读写操作
+1. **已绑定的 GitHub MCP / OAuth 连接**（如 `github-remote` skill 的 MCP 工具）：最可靠，走 OAuth 认证，不受未认证限流影响，支持读写操作（绑定该连接器即视为已授权）
 2. `gh` CLI（已安装且已登录时）：`gh search repos` / `gh search issues` / `gh pr create`
-3. skill 自带脚本直连 API（共享封装 `scripts/github_api.py`，零依赖，支持 GITHUB_TOKEN）：
+3. skill 自带脚本直连 API（共享封装 `scripts/github_api.py`，零依赖，四源 token 解析 + `scripts/auth_check.py` 授权预检）：
    `scripts/discover_repos.py` / `scripts/find_issues.py` / `scripts/repo_health.py`
 4. WebFetch 直接抓 GitHub 页面或 API
 5. WebSearch（最后手段，数据可靠性最低，需标注"未实时核验"）
@@ -67,6 +83,8 @@ v3.6.1 更新：Windows 兼容性修复——`github_api.py` 新增 `ensure_utf8
 > （只对 search 端点打点，403 时按 X-RateLimit-Reset 等待重试）。多仓库批量筛查强烈建议设置
 > `GITHUB_TOKEN`（core 5000/时、Search 30/分）或使用已绑定的 MCP/OAuth 连接，避免等待或降级。
 > **注意**：未认证 API 限流耗尽后，MCP/OAuth 连接不受影响，应优先切换到 MCP 通道。
+> **授权门控（v3.8）**：只读操作可免认证；认领评论 / fork / push / create PR 等写操作前必须先过
+> `scripts/auth_check.py` 预检，未授权先给授权步骤——详见文首「前置条件：GitHub 授权」。
 
 ## 执行可视化规范（v3.7）
 
@@ -76,7 +94,7 @@ v3.6.1 更新：Windows 兼容性修复——`github_api.py` 新增 `ensure_utf8
 
 | 层 | 载体 | 消费者 | 形式 |
 |---|---|---|---|
-| 脚本层 | 五个入口脚本 + `scripts/progress.py` | agent / CI | 管道模式：stderr 逐行 `[CR-PROGRESS] {json}` 事件（纯 ASCII，GBK 安全）；TTY 模式：ASCII 进度条原地刷新 |
+| 脚本层 | 六个入口脚本 + `scripts/progress.py` | agent / CI | 管道模式：stderr 逐行 `[CR-PROGRESS] {json}` 事件（纯 ASCII，GBK 安全）；TTY 模式：ASCII 进度条原地刷新 |
 | Agent 层 | 对话内进度卡片 | 用户 | 阶段边界刷新，聚合脚本事件 + agent 自身执行状态 |
 
 - 脚本事件字段：`phase / status(start|running|ok|warn|error|skip|done) / current / total / item / detail`。
@@ -99,7 +117,7 @@ Route 阶段序列（卡片步骤条的数据源，脚本 phase 名与之对齐�
 |---|---|---|
 | A | 画像收集 → 项目发现 → 健康度体检 → 候选清单 | `repo-discover` / `health-check` |
 | B | 项目理解 → Issue 筛选 → 撞车检测 → 架构分析 → Top 3 建议 | `issue-fetch`(+`issue-fallback`) / `collision-detect` / `issue-score` |
-| B（认领） | bot 检测 → 冲突检查 → 建议生成 | `claim-bot-detect` / `conflict-check` |
+| B（认领） | bot 检测 → 冲突检查 → 认证检查 → 建议生成 | `claim-bot-detect` / `conflict-check` / `auth-check` |
 | C | 跨仓扫描 → 撞车复核 → 日报 diff → 输出 | 复用上述 phase |
 | C+ | 状态读取 → 打分筛选 → 自动实现 → 质量门控 → 提交 → PR 跟踪 | `pr-track` 等 |
 
@@ -280,10 +298,12 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
 - GitHub API 调用全局限速（脚本已处理；跨天运行时状态文件中记录剩余配额）
 - 优先使用 MCP/OAuth 连接，避免未认证限流
 
-#### 8. 认证要求
+#### 8. 认证门控（v3.8，硬性）
 
-提交步骤依赖 GitHub 认证（MCP/OAuth 连接、`gh` CLI 已登录、或 `GITHUB_TOKEN`）；
-认证不可用时，自动实现和材料准备不受影响，提交步骤提示用户完成认证后手动执行或下次运行时重试。
+- 任何 GitHub 写操作（认领评论 / fork / push / create PR / commit）执行前，必须先运行 `python scripts/auth_check.py --json` 并确认 `authenticated: true`——写操作以该 `login` 账号身份执行
+- 未认证（`no_token` / `http_401`）：向用户展示授权步骤（见文首「前置条件：GitHub 授权」）并**停止后续写操作**——自动实现和材料准备不受影响，但提交步骤必须等用户完成授权
+- 瞬时失败（网络 / 限流，`auth_check.py` 退出码 2）：可稍后重试，不得跳过门控强行提交
+- 已绑定 GitHub 连接器 / MCP 的环境：该通道即认证通道，优先走连接器执行读写，无需再配 token
 
 #### 9. 红线
 
@@ -325,6 +345,7 @@ Route B 分析完成后，将完整报告写入 `oss-analysis-<owner>-<repo>-<YY
 - `references/api-pr-submission.md` — git 不可用时的纯 REST API 提 PR 流程（fork → Git Data API → PR），含脚本骨架与坑
 - `scripts/github_api.py` — 共享 GitHub API 封装（统一请求/限速/降级/仓库解析），三个脚本共用
 - `scripts/progress.py` — 共享执行进度事件（v3.7）：管道模式发 `[CR-PROGRESS]` JSON 事件，TTY 模式刷 ASCII 进度条，全部走 stderr；`--quiet` / `CR_QUIET=1` 关闭
+- `scripts/auth_check.py` — GitHub 授权预检（v3.8）：四源 token 解析 + `GET /user` 验证；未认证时输出授权步骤（PAT / gh CLI / 连接器）。`python scripts/auth_check.py [--json] [--quiet]`；退出码 0=已认证、1=未认证、2=瞬时错误
 - `scripts/discover_repos.py` — 候选项目发现：`python scripts/discover_repos.py --topic ai-agent --language typescript [--beginner] [--json]`
 - `scripts/repo_health.py` — 仓库健康度体检（支持批量 + AI 政策检查，v3.2 去误报）：`python scripts/repo_health.py owner/repo [owner/repo2 ...] [--json]`
 - `scripts/find_issues.py` — 可认领 Issue 机筛与打分（含撞车检测 + 标签零命中 fallback + milestone 维度）：`python scripts/find_issues.py owner/repo [--include-bugs] [--json] [--no-fallback]`

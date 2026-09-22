@@ -19,6 +19,9 @@
     data = gh.get("/repos/owner/repo")                 # core 端点
     data = gh.get("/search/issues?q=...", search=True) # search 端点
     owner, repo = gh.parse_repo("owner/repo")          # 解析仓库参数
+    token, source = gh.resolve_token()                 # 四源解析 token（v3.8）
+    info = gh.check_auth()                             # 验证认证状态（v3.8）
+    gh.require_auth("create PR")                       # 写操作门控（v3.8，未认证 exit 2）
 """
 
 import base64
@@ -95,6 +98,183 @@ def get(path, search=False):
                 continue
             return {"_error": str(e)}
     return {"_error": "unknown"}
+
+
+# ---------------------------------------------------------------------------
+# GitHub 认证层（v3.8）
+#
+# 写操作（认领评论 / fork / push / create PR）以哪个账号身份执行，完全取决于
+# 这里的 token 解析结果——授权是使用本 skill 的前置门控，不是可选项。
+# 解析优先级（先命中先返回）：
+#   1. 环境变量 GITHUB_TOKEN
+#   2. gh CLI（gh auth token，已安装且已登录时）
+#   3. git credential helper（GCM 等已存凭据，不落盘不回显）
+#   4. ~/.contrib-radar/token 文件（本 skill 自有存储，单行 token）
+# 只读场景（项目发现 / issue 扫描 / 体检）无 token 仍可用（限流降级）；
+# 写场景必须 resolve_token() 命中 + GET /user 验证通过。
+# ---------------------------------------------------------------------------
+
+TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".contrib-radar", "token")
+
+
+def _read_token_file():
+    """读取 ~/.contrib-radar/token（单行 token）；不存在返回空串。"""
+    try:
+        with open(TOKEN_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _token_from_gh_cli():
+    """gh auth token：gh 已安装且已登录时返回 token，否则空串。"""
+    try:
+        import subprocess
+        r = subprocess.run(["gh", "auth", "token"],
+                           capture_output=True, timeout=10)
+        if r.returncode == 0:
+            return r.stdout.decode("utf-8", errors="replace").strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def _token_from_credential_helper():
+    """git credential fill：从系统凭据助手取 github.com 密码（不落盘不回显）。"""
+    try:
+        import subprocess
+        r = subprocess.run(
+            ["git", "credential", "fill"],
+            input="protocol=https\nhost=github.com\n\n",
+            capture_output=True, timeout=10)
+        if r.returncode == 0:
+            for line in r.stdout.decode("utf-8", errors="replace").splitlines():
+                if line.startswith("password="):
+                    return line[len("password="):].strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def resolve_token():
+    """按优先级解析 GitHub token。
+
+    返回 (token, source)；source ∈ env | gh | credential | file；
+    四源全空返回 ("", None)。
+    """
+    env = os.environ.get("GITHUB_TOKEN", "").strip()
+    if env:
+        return env, "env"
+    for source, getter in (("gh", _token_from_gh_cli),
+                           ("credential", _token_from_credential_helper),
+                           ("file", _read_token_file)):
+        token = getter()
+        if token:
+            return token, source
+    return "", None
+
+
+def check_auth(timeout=20):
+    """验证 GitHub 认证状态（GET /user）。
+
+    返回 dict：
+        authenticated  bool —— token 有效且能读到当前用户
+        source         env | gh | credential | file | None
+        login          认证用户的 GitHub login（提 PR 的身份）
+        scopes         token 的 OAuth scopes（X-OAuth-Scopes，fine-grained 为 []）
+        error          None | no_token | http_401 | http_403 | network:<原因> | http_<码>
+    任何失败都不抛异常——调用方按 error 分支处理。
+    """
+    token, source = resolve_token()
+    if not token:
+        return {"authenticated": False, "source": None, "login": None,
+                "scopes": [], "error": "no_token"}
+    headers = dict(_headers)
+    headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(API + "/user", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.load(resp)
+            scopes = [s.strip() for s in
+                      (resp.headers.get("X-OAuth-Scopes") or "").split(",") if s.strip()]
+            return {"authenticated": True, "source": source,
+                    "login": data.get("login"), "scopes": scopes, "error": None}
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return {"authenticated": False, "source": source, "login": None,
+                    "scopes": [], "error": "http_401"}
+        if e.code == 403:
+            return {"authenticated": False, "source": source, "login": None,
+                    "scopes": [], "error": "http_403"}
+        return {"authenticated": False, "source": source, "login": None,
+                "scopes": [], "error": f"http_{e.code}"}
+    except Exception as e:  # noqa: BLE001
+        return {"authenticated": False, "source": source, "login": None,
+                "scopes": [], "error": f"network:{e}"}
+
+
+def auth_guidance():
+    """未认证时的授权指引（结构化数据；渲染由 auth_check.py / require_auth 负责）。"""
+    return {
+        "summary": ("未检测到可用的 GitHub 认证。认领评论 / fork / push / create PR "
+                    "等写操作以 token 所属账号身份执行，动手前必须先完成授权，"
+                    "确认自己将以哪个账号提 PR。"),
+        "options": [
+            {
+                "id": "pat",
+                "title": "方式一：Personal Access Token（最通用，推荐）",
+                "steps": [
+                    "打开 https://github.com/settings/tokens （Fine-grained）或 https://github.com/settings/tokens/new （Classic）",
+                    "Fine-grained：Resource owner 选自己；Repository access 选目标仓库或 All repositories；Permissions -> Repository permissions 给 Contents / Pull requests / Issues 的 Read and write",
+                    "Classic：勾选 repo scope 即可（含自己 fork 的推送权限）",
+                    "生成后立即复制（gho_ / github_pat_ 开头，只显示一次）",
+                    "保存任选其一：a) 环境变量 GITHUB_TOKEN=<token>（PowerShell: $env:GITHUB_TOKEN=\"<token>\"）；b) 写入 ~/.contrib-radar/token 文件（仅一行 token，勿提交到仓库）",
+                    "重新运行 python scripts/auth_check.py 验证",
+                ],
+            },
+            {
+                "id": "gh",
+                "title": "方式二：gh CLI（本机已装 GitHub CLI 时最省事）",
+                "steps": [
+                    "安装：https://cli.github.com （Windows: winget install GitHub.cli）",
+                    "运行 gh auth login -> 选 GitHub.com -> HTTPS -> 浏览器授权或粘贴 token",
+                    "重新运行 python scripts/auth_check.py 验证",
+                ],
+            },
+            {
+                "id": "mcp",
+                "title": "方式三：绑定 GitHub 连接器 / MCP（WorkBuddy 等带连接器的环境）",
+                "steps": [
+                    "在连接器管理中搜索 GitHub 并完成 OAuth 绑定",
+                    "绑定后确认连接器状态为已连接",
+                    "重新运行 python scripts/auth_check.py 验证（该通道优先用于读写）",
+                ],
+            },
+        ],
+        "note": ("只读操作（项目发现 / issue 扫描 / 体检）可免认证先行；"
+                 "一旦进入认领、提 PR、commit 等写操作必须认证。"),
+    }
+
+
+def require_auth(operation="GitHub 写操作"):
+    """写操作前置门控。
+
+    认证成功：返回 check_auth() 结果 dict。
+    未认证 / token 失效 / 瞬时网络失败：向 stderr 输出授权指引，sys.exit(2)。
+    设计取舍：瞬时失败也按未认证拦住——宁可让用户重试，也不带病提交。
+    """
+    info = check_auth()
+    if info["authenticated"]:
+        return info
+    g = auth_guidance()
+    sys.stderr.write(f"\n[授权门控] {operation} 需要 GitHub 认证：{g['summary']}\n")
+    for opt in g["options"]:
+        sys.stderr.write(f"\n{opt['title']}\n")
+        for i, step in enumerate(opt["steps"], 1):
+            sys.stderr.write(f"  {i}. {step}\n")
+    sys.stderr.write(f"\n{g['note']}\n")
+    sys.stderr.write("验证命令: python scripts/auth_check.py --json\n\n")
+    sys.exit(2)
 
 
 def parse_repo(arg):

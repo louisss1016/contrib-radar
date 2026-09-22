@@ -8,15 +8,22 @@
 - 只想改少量文件（文档、单点 bug 修复），不值得完整 clone 大仓库。
 - `gh` CLI 未安装 / 未登录，但系统里有 GitHub 凭据（如 Git Credential Manager）。
 
-## 认证
+## 认证（前置门控）
 
-优先从已存的凭据助手取 token（不落盘、不回显）：
+先跑授权预检，通过再继续：
 
 ```bash
-TOKEN=$(printf "protocol=https\nhost=github.com\n" | git credential fill | grep '^password=' | cut -d= -f2-)
+python scripts/auth_check.py --json   # authenticated: true 才继续；false 按 guidance 授权
 ```
 
-或用环境变量 `GITHUB_TOKEN`（`gho_` / `github_pat_` 均可）。之后所有请求带 `Authorization: Bearer <token>` 头。
+token 解析优先级（`github_api.resolve_token()`，先命中先返回）：
+
+1. 环境变量 `GITHUB_TOKEN`（`gho_` / `github_pat_` 均可）
+2. `gh auth token`（gh CLI 已安装且已登录）
+3. git credential helper：`printf "protocol=https\nhost=github.com\n" | git credential fill | grep '^password=' | cut -d= -f2-`
+4. `~/.contrib-radar/token` 文件（单行 token）
+
+之后所有请求带 `Authorization: Bearer <token>` 头。
 
 ## 流程（8 步）
 
@@ -36,9 +43,15 @@ TOKEN=$(printf "protocol=https\nhost=github.com\n" | git credential fill | grep 
 ## 复用脚本骨架
 
 ```python
-import json, os, time, base64, urllib.request, urllib.error
+import json, os, sys, time, base64, urllib.request, urllib.error
 
-TOKEN = os.environ["GITHUB_TOKEN"]
+sys.path.insert(0, "scripts")  # 或 contrib-radar/scripts，按实际位置调整
+import github_api as gh
+
+TOKEN, _SRC = gh.resolve_token()   # 四源解析：env > gh CLI > credential helper > token 文件
+if not TOKEN:
+    sys.exit("未授权：先运行 python scripts/auth_check.py 完成 GitHub 授权")
+
 H = {"Accept": "application/vnd.github+json", "User-Agent": "contrib-radar",
      "Authorization": "Bearer " + TOKEN}
 UPSTREAM, FORK, BRANCH = "TencentCloud/Octop", "louisss1016/Octop", "fix/xxx"

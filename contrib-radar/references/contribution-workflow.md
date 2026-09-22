@@ -4,6 +4,15 @@
 
 ## 零、实现前准备（新增）
 
+### GitHub 授权门控（动手前第一位）
+
+写操作（认领评论 / fork / push / create PR / commit）以 token 所属账号身份执行——先授权、确认身份，再动手：
+
+1. 运行 `python scripts/auth_check.py --json`
+2. `authenticated: true` → 记下 `login` 账号（这就是提 PR 的身份），继续下一步
+3. `authenticated: false` → 按输出中的 `guidance` 完成授权（PAT / `gh auth login` / 绑定 GitHub 连接器，任选其一），**未授权禁止进入认领与提交流程**
+4. token 失效（`http_401`）→ 重新生成 token 后重试；瞬时失败（退出码 2）→ 稍后重试，不得跳过门控
+
 ### Baseline 采集（必须先做）
 
 改代码前先跑一次全量测试，记录预先存在的失败列表，改完后对比——**只有新增失败才是自己的问题**。
@@ -150,6 +159,8 @@ grep -E "(fail|error)" baseline-test.txt > baseline-failures.txt
 ---
 
 ## 三、PR 提交
+
+提交前复核授权仍有效（`python scripts/auth_check.py` 退出码 0）——长时间实现后 token 可能已过期，失效时按授权步骤更换后重试，不要反复重试同一失效 token。
 
 ### Commit 拆分
 
