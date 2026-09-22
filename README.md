@@ -14,7 +14,7 @@
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-compatible-purple.svg)](https://agentskills.io)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/louisss1016/contrib-radar/issues)
 
-**[快速开始](#-快速开始) · [它解决什么问题](#-它解决什么问题) · [真实效果](#-真实效果) · [命令参考](#-命令参考) · [工作流程](#-工作流程) · [定时任务自动化](#-定时任务自动化) · [设计原则](#-设计原则) · [FAQ](#-faq)**
+**[快速开始](#-快速开始) · [它解决什么问题](#-它解决什么问题) · [真实效果](#-真实效果) · [命令参考](#-命令参考) · [执行可视化](#-执行可视化v37) · [工作流程](#-工作流程) · [定时任务自动化](#-定时任务自动化) · [设计原则](#-设计原则) · [FAQ](#-faq)**
 
 </div>
 
@@ -264,13 +264,38 @@ Contribution Score (Top 3) .............................. 3 ⭐
 
 | 命令 | 作用 | 关键参数 |
 | --- | --- | --- |
-| `discover_repos.py` | 按方向/语言/规模发现候选项目 | `--topic` `--query` `--language` `--stars` `--max-stars` `--pushed-days` `--beginner` `--limit` `--json` |
-| `repo_health.py` | 12 项健康度体检 + AI 政策扫描 | 多仓库批量、`--json`（单项缺失自动降级，不中断） |
-| `find_issues.py` | Issue 筛选、双维度打分（Quality + Feasibility）、Collision Risk、Stack Match、Why this issue? | `--days` `--labels` `--include-bugs` `--beginner-only` `--limit` `--min-score` `--no-fallback` `--show-collision` `--stack` `--json` |
-| `claim_issue.py` | 认领方式检测 + 认领冲突检查 | 接受 `owner/repo N` 或 issue URL、`--json` |
-| `pr_tracker.py` | PR 生命周期跟踪 + 下一步动作判断 | 接受 `owner/repo N` 或 PR URL、`--json` |
+| `discover_repos.py` | 按方向/语言/规模发现候选项目 | `--topic` `--query` `--language` `--stars` `--max-stars` `--pushed-days` `--beginner` `--limit` `--json` `--quiet` |
+| `repo_health.py` | 12 项健康度体检 + AI 政策扫描 | 多仓库批量、`--json`（单项缺失自动降级，不中断）、`--quiet` |
+| `find_issues.py` | Issue 筛选、双维度打分（Quality + Feasibility）、Collision Risk、Stack Match、Why this issue? | `--days` `--labels` `--include-bugs` `--beginner-only` `--limit` `--min-score` `--no-fallback` `--show-collision` `--stack` `--json` `--quiet` |
+| `claim_issue.py` | 认领方式检测 + 认领冲突检查 | 接受 `owner/repo N` 或 issue URL、`--json` `--quiet` |
+| `pr_tracker.py` | PR 生命周期跟踪 + 下一步动作判断 | 接受 `owner/repo N` 或 PR URL、`--json` `--quiet` |
 
-> 全部脚本支持 `--help`；输出格式（人读表格 / `--json`）可随场景切换。
+> 全部脚本支持 `--help`；输出格式（人读表格 / `--json`）可随场景切换；`--quiet` 或环境变量 `CR_QUIET=1` 关闭 stderr 进度输出（见「执行可视化」）。
+
+---
+
+## 📊 执行可视化（v3.7）
+
+批量体检、全量 issue 筛选这类耗时操作，执行期间通过 **stderr** 实时呈现进度与当前状态——stdout 的 `--json` 契约不受任何影响：
+
+| 维度 | 说明 |
+|------|------|
+| 管道模式（stderr 非 TTY，Agent/CI 消费） | 单行 JSON 事件，前缀 `[CR-PROGRESS]`，纯 ASCII（Windows GBK 控制台安全）；按 `phase`/`status` 聚即可还原阶段步骤条与当前状态 |
+| 交互模式（stderr 为 TTY，人类观看） | ASCII 进度条刷新，如 `[=======>---------] 5/10`；`CR_PROGRESS_BAR=1` 可在管道中强制 |
+| 事件结构 | `{phase, status, current, total, item, detail}`；status 取值 `start \| running \| ok \| warn \| error \| skip \| done` |
+| 异常状态 | error/warn/skip 原样透传，不渲染为成功；脚本崩溃时已发射的事件保留在 stderr，可定位崩溃阶段 |
+| 关闭方式 | 任意脚本加 `--quiet`，或设 `CR_QUIET=1`（只影响 stderr 进度，不影响 stdout） |
+
+实测事件流（`repo_health.py psf/requests --json` 的 stderr，stdout 同时输出完整体检结果）：
+
+```text
+[CR-PROGRESS] {"phase": "health-check", "status": "start", "total": 1}
+[CR-PROGRESS] {"phase": "health-check", "status": "running", "current": 1, "total": 1, "item": "psf/requests"}
+[CR-PROGRESS] {"phase": "health-check", "status": "ok", "current": 1, "total": 1, "item": "psf/requests", "detail": "10/12"}
+[CR-PROGRESS] {"phase": "health-check", "status": "done", "detail": "1 repos checked, 0 failed"}
+```
+
+五个入口脚本共插桩 14 个阶段：`health-check`；`issue-fetch` / `issue-fallback` / `collision-detect` / `issue-score`；`pr-track` / `mergeability` / `ci-check` / `review-check` / `rebase-check`；`claim-check` / `claim-bot-detect` / `conflict-check`；`repo-discover`。Agent 侧消费约定见 `SKILL.md`「执行可视化规范」。
 
 ---
 
@@ -424,8 +449,9 @@ contrib-radar/
 │   ├── communication-templates.md #   交流模板：Issue/PR 提问、跟帖话术
 │   ├── example-analysis.md        #   完整案例分析（输出颗粒度校准）
 │   └── api-pr-submission.md       #   git 不可用时的纯 REST API 提 PR 流程
-└── scripts/                       # 零依赖 Python 工具（6 个）
+└── scripts/                       # 零依赖 Python 工具（7 个）
     ├── github_api.py              #   共享模块：请求/限速/重试/仓库解析
+    ├── progress.py                #   执行可视化：双通道进度事件（只写 stderr）
     ├── discover_repos.py          #   候选项目发现
     ├── find_issues.py             #   Issue 筛选 + 打分 + 撞车检测 + fallback
     ├── repo_health.py             #   健康度体检 + AI 政策检查（去误报）
@@ -440,12 +466,12 @@ contrib-radar/
 零依赖测试套件（仅用 Python 标准库 `unittest`），覆盖打分模型、碰撞检测、技术栈匹配、AI 政策去误报、API 工具函数。
 
 ```bash
-python run_tests.py          # 运行全部 60 个测试
+python run_tests.py          # 运行全部 64 个测试
 python run_tests.py -v       # 详细输出
 ```
 
 ```
-Ran 60 tests in 0.003s
+Ran 64 tests in 0.023s
 OK
 ```
 
@@ -454,8 +480,8 @@ OK
 | `test_scoring.py` | Issue Quality / Feasibility 打分、Stack Match、Score Regression | 32 |
 | `test_collision.py` | Collision Risk 分级（HIGH/MEDIUM/LOW） | 7 |
 | `test_ai_policy.py` | AI 政策去误报（"llm" 单独不触发、禁止性短语、中文） | 8 |
-| `test_github_api.py` | parse_repo / days_ago 纯函数 | 13 |
-| **合计** | | **60** |
+| `test_github_api.py` | parse_repo / days_ago 纯函数、stdio 编码保障 | 17 |
+| **合计** | | **64** |
 
 **Score Regression Tests**：固定 3 个黄金样本（高/中/低价值 issue），验证打分结果不变。算法调整时必须同步更新期望值，并确认相对排序未被意外改变。
 
@@ -471,6 +497,7 @@ OK
 4. **可解释的确定性输出**：双维度打分权重透明（Issue Quality：清晰度 30 / 标签 15 / 新鲜度 25 / milestone 20 / 讨论 10；Feasibility：撞车 30 / 修改范围 25 / 新手友好 25 / 技术栈匹配 20），可审计、可复现
 5. **状态驱动 + 门控兜底的全自动**：Route C+ 通过 `contrib-radar-state.json` 持久化进度，6 项质量门控 + 冷却期 + 黑名单多层兜底，全自动但不失控
 6. **遵守 Agent Skills 标准**：`SKILL.md` 自包含、name 用 kebab-case、description 写明「做什么 + 何时用」，可被主流 Agent 平台自动发现
+7. **执行过程可观测**：进度事件只写 stderr、单行 JSON、纯 ASCII——Agent 可实时消费，人类有进度条，而 stdout 的机器可读契约逐字节不变
 
 ---
 
@@ -514,6 +541,18 @@ OK
 - 人工确认降级为**可选保守模式**（Query 中声明即生效），供首次观察或保守用户使用
 - README 定位同步更新为「全自动开源贡献流水线」
 
+**v3.6.1（已交付）**：Windows 兼容性热修复——
+
+- `github_api.py` 新增 `ensure_utf8_stdio()`，五个入口脚本启动时调用，修复 Windows GBK(cp936) 控制台 print emoji 崩溃
+- `tests/test_github_api.py` 补充 stdio 编码保障测试（+4，累计 64 个）
+
+**v3.7（已交付）**：执行可视化——
+
+- 新增 `scripts/progress.py` 双通道进度模块：管道模式（stderr 非 TTY）向 stderr 发射 `[CR-PROGRESS]` 前缀单行 JSON 事件（纯 ASCII，GBK 安全），交互模式（TTY）刷新 ASCII 进度条，两通道按消费者自动互斥
+- 五个入口脚本全部插桩 14 个阶段事件（start/running/ok/warn/error/skip/done），执行期间实时呈现运行进度与当前状态；异常状态原样透传，可定位崩溃阶段
+- `--quiet` 参数 / `CR_QUIET=1` 环境变量可整体关闭；进度只写 stderr，stdout 契约（含 `--json`）逐字节不变（真实 API 双版本比对验证）
+- `SKILL.md` 新增「执行可视化规范（v3.7）」章节，约定 Agent 侧消费方式
+
 **候选方向**（欢迎 Issue 讨论，暂未排期）：
 
 - MCP server 化：把脚本封装为 MCP 工具，供更多 Agent 平台直接调用
@@ -545,6 +584,9 @@ OK
 
 **标签搜索零命中怎么办？**
 `find_issues.py` 会自动 fallback 到全量 open issue 列表（最多 300 条），再用打分模型过滤。很多仓库的 roadmap/feature issue 不打标签，这个 fallback 能避免漏检高价值条目。可用 `--no-fallback` 关闭。
+
+**运行时怎么看进度？**
+v3.7 起所有脚本执行期间向 stderr 实时发送进度：管道模式为 `[CR-PROGRESS]` 单行 JSON 事件（Agent/CI 消费），TTY 模式为 ASCII 进度条。进度只走 stderr，永不污染 stdout 的 `--json` 输出；不需要时加 `--quiet` 或设 `CR_QUIET=1`。详见「执行可视化」章节。
 
 ---
 
